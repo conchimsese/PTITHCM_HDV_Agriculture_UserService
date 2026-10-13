@@ -1,0 +1,37 @@
+services:
+  user-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: ${DB_USERNAME:-user_service}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d user_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  user-service:
+    profiles: [app]
+    build: .
+    environment:
+      SERVER_PORT: 8081
+      DB_URL: jdbc:postgresql://user-db:5432/user_db
+      DB_USERNAME: ${DB_USERNAME:-user_service}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      INTERNAL_GATEWAY_KEY: ${INTERNAL_GATEWAY_KEY:-}
+      INTERNAL_FARMING_KEY: ${INTERNAL_FARMING_KEY:-}
+      INTERNAL_TRADING_KEY: ${INTERNAL_TRADING_KEY:-}
+      INTERNAL_CHAT_KEY: ${INTERNAL_CHAT_KEY:-}
+      INTERNAL_PAYMENT_KEY: ${INTERNAL_PAYMENT_KEY:-}
+      INTERNAL_NOTIFICATION_KEY: ${INTERNAL_NOTIFICATION_KEY:-}
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      user-db:
+        condition: service_healthy
+volumes:
+  user-db-data:

@@ -1,0 +1,76 @@
+server:
+  port: ${SERVER_PORT:8081}
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+spring:
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  application:
+    name: user-service
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      connection-timeout: 500
+      validation-timeout: 250
+      maximum-pool-size: 10
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  jdbc:
+    template:
+      query-timeout: 1s
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    clean-disabled: true
+    baseline-on-migrate: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  kafka:
+    listener:
+      auto-startup: false
+    admin:
+      auto-create: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+  health:
+    mail:
+      enabled: false
+    readinessstate:
+      enabled: true
+user:
+  internal:
+    # Each configured caller is allowed ONLY GET access-state. Empty = disabled.
+    keys:
+      gateway: ${INTERNAL_GATEWAY_KEY:}
+      farming: ${INTERNAL_FARMING_KEY:}
+      trading: ${INTERNAL_TRADING_KEY:}
+      chat: ${INTERNAL_CHAT_KEY:}
+      payment: ${INTERNAL_PAYMENT_KEY:}
+      notification: ${INTERNAL_NOTIFICATION_KEY:}

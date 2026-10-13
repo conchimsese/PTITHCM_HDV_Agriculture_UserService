@@ -1,0 +1,12 @@
+/target/
+/.tools/
+/.m2/
+/.env
+/.env.*
+!/.env.example
+/local-data/
+/secrets/
+*.log
+.idea/
+*.iml
+.vscode/
