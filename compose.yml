@@ -28,10 +28,33 @@ services:
       INTERNAL_CHAT_KEY: ${INTERNAL_CHAT_KEY:-}
       INTERNAL_PAYMENT_KEY: ${INTERNAL_PAYMENT_KEY:-}
       INTERNAL_NOTIFICATION_KEY: ${INTERNAL_NOTIFICATION_KEY:-}
+      OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:-}
+      JWT_PRIVATE_KEY_PATH: /run/user-secrets/private.pem
+      JWT_PUBLIC_KEY_PATH: /run/user-secrets/public.pem
+      JWT_KEY_ID: ${JWT_KEY_ID:-}
+      MAIL_HOST: user-mail
+      MAIL_PORT: 1025
+      MAIL_FROM: ${MAIL_FROM:-user-service@localhost}
+      MAIL_SMTP_AUTH: "false"
+      MAIL_STARTTLS: "false"
+      ADMIN_SEED_ENABLED: ${ADMIN_SEED_ENABLED:-false}
+      ADMIN_1_USERNAME: ${ADMIN_1_USERNAME:-}
+      ADMIN_1_EMAIL: ${ADMIN_1_EMAIL:-}
+      ADMIN_1_PASSWORD: ${ADMIN_1_PASSWORD:-}
+      ADMIN_2_USERNAME: ${ADMIN_2_USERNAME:-}
+      ADMIN_2_EMAIL: ${ADMIN_2_EMAIL:-}
+      ADMIN_2_PASSWORD: ${ADMIN_2_PASSWORD:-}
+    volumes:
+      - ./secrets/local-auth:/run/user-secrets:ro
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
       user-db:
         condition: service_healthy
+  user-mail:
+    image: axllent/mailpit:v1.27.10
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 volumes:
   user-db-data:

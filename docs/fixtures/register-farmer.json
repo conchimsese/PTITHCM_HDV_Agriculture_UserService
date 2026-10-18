@@ -1,0 +1,14 @@
+{
+  "username": "fixture_farmer",
+  "email": "fixture-farmer@example.test",
+  "password": "TestOnly9!",
+  "role": "FARMER",
+  "profile": {
+    "fullName": "Test Farmer",
+    "phone": null,
+    "address": null,
+    "province": null,
+    "district": null,
+    "avatarUrl": null
+  }
+}

@@ -60,7 +60,7 @@ try {
     Compose up -d --wait user-db
     $java = (Get-Command java).Source
     $app = Start-Process -FilePath $java -ArgumentList @('-jar', $jar, '--spring.profiles.active=local',
-        "--spring.config.import=file:${configPath}[.properties]", '--debug=false') -WindowStyle Hidden -PassThru `
+        "--spring.config.import=file:${configPath}[.properties]", '--user.auth.enabled=false', '--debug=false') -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $taskDirectory 'app.log') `
         -RedirectStandardError (Join-Path $taskDirectory 'app-error.log')
     $ready = $false

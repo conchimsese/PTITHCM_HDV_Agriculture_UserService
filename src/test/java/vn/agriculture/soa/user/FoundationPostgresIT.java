@@ -20,7 +20,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 
-@SpringBootTest(properties = "user.internal.keys.gateway=test-only-integration-key-32-bytes-long")
+@SpringBootTest(properties = {"user.internal.keys.gateway=test-only-integration-key-32-bytes-long", "user.auth.enabled=false"})
 @AutoConfigureMockMvc
 class FoundationPostgresIT {
     private static PostgreSQLContainer<?> container;

@@ -46,6 +46,20 @@ spring:
       auto-startup: false
     admin:
       auto-create: false
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+      mail.smtp.starttls.required: ${MAIL_STARTTLS:true}
+      mail.smtp.ssl.checkserveridentity: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+      mail.debug: false
 management:
   endpoints:
     web:
@@ -65,6 +79,23 @@ management:
     readinessstate:
       enabled: true
 user:
+  auth:
+    enabled: ${AUTH_ENABLED:true}
+    otp-hmac-secret: ${OTP_HMAC_SECRET:}
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:}
+    public-key-path: ${JWT_PUBLIC_KEY_PATH:}
+    key-id: ${JWT_KEY_ID:}
+    previous-key-id: ${JWT_PREVIOUS_KEY_ID:}
+    previous-public-key-path: ${JWT_PREVIOUS_PUBLIC_KEY_PATH:}
+    mail-from: ${MAIL_FROM:}
+    seed-enabled: ${ADMIN_SEED_ENABLED:false}
+    admins:
+      - username: ${ADMIN_1_USERNAME:}
+        email: ${ADMIN_1_EMAIL:}
+        password: ${ADMIN_1_PASSWORD:}
+      - username: ${ADMIN_2_USERNAME:}
+        email: ${ADMIN_2_EMAIL:}
+        password: ${ADMIN_2_PASSWORD:}
   internal:
     # Each configured caller is allowed ONLY GET access-state. Empty = disabled.
     keys:

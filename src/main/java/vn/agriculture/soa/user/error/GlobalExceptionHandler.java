@@ -18,6 +18,11 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(vn.agriculture.soa.user.auth.RateLimitedException.class)
+    ResponseEntity<ApiError> rateLimited(vn.agriculture.soa.user.auth.RateLimitedException ex,HttpServletRequest request) {
+        return ResponseEntity.status(429).header("Cache-Control","no-store").header("Retry-After",Long.toString(ex.retryAfter()))
+                .body(new ApiError(Instant.now(),429,ex.code(),ex.getMessage(),request.getRequestURI()));
+    }
     @ExceptionHandler(ApiException.class)
     ResponseEntity<ApiError> api(ApiException ex, HttpServletRequest request) {
         return error(ex.status(), ex.code(), ex.getMessage(), request);
