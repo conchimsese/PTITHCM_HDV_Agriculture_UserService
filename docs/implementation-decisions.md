@@ -68,6 +68,18 @@ Auth/OTP SMTP/seed Admin, rate limits, refresh rotation, profile/Admin CRUD, med
 - Docker Desktop lúc đầu chưa chạy; đã khởi động để chạy PostgreSQL thật. Không có test bị bỏ qua vì Docker/network. Dockerfile đã tạo, chưa build/run image ứng dụng; smoke chạy JAR trên host và PostgreSQL trong Compose.
 - Môi trường local bình thường cần điền DB_PASSWORD và key riêng cho caller muốn bật trong `.env`. Không tạo credential production, không seed Admin trong lượt này. Không commit/push.
 
+## Phase 2 — Profile và transactional outbox — 19/10/2026
+
+- GET/PUT /api/v1/users/me lấy identity duy nhất từ JWT sub. Ba public endpoint chỉ trả Farmer/Trader ACTIVE theo đúng role; whitelist đúng sáu field, không đọc password hash. ADMIN đọc profile=null và PUT trả400.
+- BA không đưa ví dụ envelope riêng cho PUT profile: chọn object profile trực tiếp theo role, được ghi trong README/fixtures. Tên required, optional vắng trở thành null; field lạ hoặc sai role bị từ chối kể cả null. Không biến PUT thành PATCH.
+- Private GET dùng transaction read-only REPEATABLE_READ để account/profile nhất quán. PUT khóa account trước rồi đọc profile mới, kiểm ACTIVE bên trong transaction. Public GET dùng một SQL statement và chỉ chọn whitelist.
+- Thay đổi public snapshot mới tăng profile_version và ghi USER_PROFILE_UPDATED cùng transaction. PUT giống dữ liệu hiện tại không ghi lại; đổi riêng phone/address/buyingArea không tạo public event/version. account_version không đổi. Lỗi outbox rollback cả profile và version. Không sửa V1/V2 hoặc thêm migration vì schema hiện có đủ dùng.
+- Writer chỉ chạy trong business transaction, lưu envelope vào JSONB: sourceService user-service, eventVersion1, topic soa.user.profile.v1, aggregate_id accountId, recipientIds=[] và profile snapshot năm field public. Chưa phát event sang Trading. Relay, event ban đầu khi verify, status/avatar và bootstrap thuộc Phase 5.
+- avatarUrl chỉ là reference tương đối chuẩn đến metadata đã attached thuộc cùng owner/resource. Phase 2 không có lưu file/upload/download; URL ngoài, media tạm và owner khác bị từ chối.
+- Chuyển UTC Clock sang cấu hình dùng chung, để profile vẫn có Clock trong context nền tắt auth.
+- Smoke bản chạy local qua spring-boot:run port8081 đạt health UP, GET me/PUT me/public/Farmer 200, PUT lặp 200, sai role404; public response đúng sáu field. Chỉ cập nhật account Farmer demo đã tạo trước đó và logout token kiểm tra. Native PostgreSQL local là 18.6; bộ integration dùng PostgreSQL17. Flyway validate hai migration thành công trên local nhưng có cảnh báo phiên bản18 mới hơn mức17 đã được Flyway kiểm chứng.
+- clean verify đạt 69 test: 20 unit/Web/security + 49 integration, gồm 19 test profile trên PostgreSQL Testcontainers. Kiểm ownership, whitelist response/event, validation, PUT replacement, lỗi outbox rollback, cập nhật đồng thời khác nhau và trùng nhau; không failure/error/skipped. Log local .tools/profile-verify.log. Windows cần dừng process chạy JAR trước repackage để tránh khóa file.
+
 ## Sửa cấu hình kết nối local — 12/10/2026
 
 - PostgreSQL Windows đang phục vụ localhost:5432. Kiểm tra trực tiếp xác nhận database `user_db` tồn tại, role `user_db` không tồn tại; mật khẩu người dùng cấu hình đăng nhập thành công với role `postgres`.

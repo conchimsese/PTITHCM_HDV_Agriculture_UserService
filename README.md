@@ -1,4 +1,4 @@
-# User Service — nền và authentication
+# User Service — nền, authentication và profile
 
 Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port mặc định **8081**. Nguồn yêu cầu: `docs/BA - SOA.docx` (User Service và Contract chung MVP v2.1) và `docs/Prompt_User_Service.md`.
 
@@ -12,7 +12,9 @@ Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port m
 - Sáu API auth: register, verify-email, resend-verification, login, refresh, logout; OTP HMAC-SHA-256, SMTP sau commit, BCrypt, RS256, refresh rotation, rate limit DB và seed Admin có OTP.
 - Migration V2 bổ sung cửa sổ thử sai đăng nhập theo IP thực + username chuẩn hóa. Protected User request có JWT kiểm current state trực tiếp ở DB.
 
-Chưa triển khai CRUD profile/Admin, upload avatar, Kafka relay hoặc reputation consumer. Ngoài auth/health/internal access-state, API khác vẫn bị chặn mặc định. Các bảng history/outbox/media chỉ là nền schema; chưa có xử lý nghiệp vụ tương ứng.
+- Phase 2: private/public profile, PUT toàn bộ theo role; profileVersion và outbox snapshot công khai ghi cùng transaction.
+
+Chưa triển khai Admin CRUD, upload/read avatar, Kafka relay hoặc reputation consumer. Outbox đã nhận sự kiện cập nhật profile, chưa phát sang Trading.
 
 ## Chạy local trên máy
 
@@ -96,6 +98,50 @@ TokenPair gồm accessToken,refreshToken,tokenType=Bearer,expiresIn=900,accountI
 OTP 6 số/10 phút/5 lần sai; resend 60 giây, tối đa 5 mã/giờ/email gồm register. Register commit account/profile/OTP trước SMTP; lỗi SMTP vẫn 201/FAILED và account UNVERIFIED, không xóa account. Verify/resend khóa account rồi OTP. Resend khi email không có/không cần verify trả 202. Daily cleanup 03:00 UTC không xóa lịch sử quota còn hiệu lực. Sai username/password trả 401; sau 10 lần sai/IP+username trong 15 phút trả 429/Retry-After. Không lấy X-Forwarded-For từ client để đổi bucket.
 
 Fixture test-only tại `docs/fixtures/register-farmer.json`; thay username/email trước khi thử, lấy OTP từ mail sink. Không dùng fixture password cho seed/production. Register ADMIN bị từ chối; avatarUrl khi register phải null hoặc vắng vì upload chưa triển khai.
+
+## Profile API — Phase 2
+
+Các endpoint đều yêu cầu Bearer của account ACTIVE, kể cả đọc public profile. Identity của `/me` lấy từ JWT `sub`.
+
+| Method/path | Kết quả |
+| --- | --- |
+| GET `/api/v1/users/me` | Private DTO của chính caller; ADMIN có profile=null |
+| PUT `/api/v1/users/me` | Thay toàn bộ profile Farmer/Trader; ADMIN trả 400 |
+| GET `/api/v1/users/{accountId}` | Public profile Farmer/Trader ACTIVE |
+| GET `/api/v1/farmers/{farmerId}` | Public profile Farmer ACTIVE |
+| GET `/api/v1/traders/{traderId}` | Public profile Trader ACTIVE |
+
+PUT nhận object profile trực tiếp, không bọc trong `profile`. Ví dụ Farmer:
+
+```json
+{"fullName":"Farmer demo","province":"Dong Thap","district":"Cao Lanh","avatarUrl":null}
+```
+
+Farmer bắt buộc `fullName`, Trader bắt buộc `businessName`; tên không được rỗng sau trim. Field tùy chọn vắng sẽ trở thành null: phone,address,province,district,avatarUrl và buyingArea riêng Trader. Từ chối field không thuộc role hoặc field account như role/email/password/status/reputation, kể cả giá trị null. Không hỗ trợ PATCH.
+
+Private response gồm accountId,username,email,role,status,createdAt,emailVerifiedAt,profile. Public response chỉ có sáu field accountId,displayName,avatarUrl,province,district,joinedAt; joinedAt là accounts.created_at. Không lộ email/phone/address/buyingArea/reputation. Response dùng `Cache-Control: private, no-store`. Caller bị khóa trả 403; target ADMIN/sai role/không ACTIVE/không tồn tại trả 404; lỗi persistence trả 503 DEPENDENCY_UNAVAILABLE.
+
+avatarUrl khác null chỉ chấp nhận đường dẫn tương đối `/api/v1/users/media/{UUID}` chuẩn, metadata thuộc chính owner/resource và đã attached. URL ngoài hoặc media tạm/owner khác bị từ chối. Upload, lưu file và API đọc media thuộc Phase 4, chưa triển khai tại đây; hiện có thể giữ avatarUrl=null.
+
+PUT khóa account, cập nhật profile, tăng profileVersion và ghi snapshot public vào outbox trong cùng transaction; outbox lỗi sẽ rollback. PUT lặp cùng dữ liệu không tạo event/version mới. Chỉ đổi phone/address/buyingArea không đổi public version và không tạo public event. account_version không đổi khi sửa profile. Dùng schema V1/V2 hiện có, không thêm migration.
+
+Outbox topic `soa.user.profile.v1`, aggregate_id=accountId (Kafka key khi relay), event USER_PROFILE_UPDATED/version1, recipientIds=[]; snapshot chỉ chứa displayName,avatarUrl,province,district,joinedAt. Phase 5 sẽ làm relay, các trigger verify/status/avatar và bootstrap; hiện chưa đồng bộ sang Trading.
+
+Fixtures: `docs/fixtures/put-farmer-profile.json`, `put-trader-profile.json`, `user-profile-updated.json`. `clean verify` đã đạt **69 test** (20 unit/Web/security + 49 integration), gồm 19 test profile: whitelist, ownership, validation, rollback và cập nhật đồng thời.
+
+Trên Windows, dừng process đang chạy JAR trước khi Maven repackage để tránh khóa file. Dùng `spring-boot:run` khi phát triển local.
+
+## Demo API local
+
+Khi service đang chạy với SMTP trỏ Mailpit localhost:1025:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Demo-Auth.ps1
+```
+
+Script tạo một Farmer demo mới và chạy register → OTP đọc từ Mailpit → login → refresh/logout; đồng thời kiểm tra login trước OTP, cooldown, refresh cũ và public register ADMIN bị chặn. Kết quả ở `.tools/demo-auth/latest.md`; mật khẩu Farmer chỉ lưu trong `.tools/demo-auth/account.env` bị Git ignore. OTP/token không ghi vào báo cáo hoặc console. Mỗi lần chạy tạo một account demo, không xóa dữ liệu hiện có.
+
+Thêm `-IncludeAdmins` để xác minh OTP/đăng nhập/logout hai Admin đã seed từ `.env`; nếu đã ACTIVE thì chỉ đăng nhập/logout. Script chỉ đọc Mailpit local, không đọc/gửi thư qua hộp mail bên ngoài. Admin password đọc từ `.env`, không in ra console.
 
 ## Seed Admin và rotation key
 

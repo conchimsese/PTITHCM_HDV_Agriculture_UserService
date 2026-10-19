@@ -16,7 +16,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties(AuthProperties.class)
 @EnableScheduling
 public class AuthConfiguration {
-    @Bean Clock authClock() { return Clock.systemUTC(); }
     @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(12); }
     @Bean JwtTokens jwtTokens(AuthProperties properties, Clock clock) { return new JwtTokens(properties, clock); }
     @Bean @ConditionalOnMissingBean(OtpMailer.class)

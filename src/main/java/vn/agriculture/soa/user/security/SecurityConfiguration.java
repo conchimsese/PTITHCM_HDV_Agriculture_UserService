@@ -57,6 +57,9 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                 .requestMatchers(HttpMethod.POST,PUBLIC_AUTH.toArray(String[]::new)).permitAll()
                 .requestMatchers(HttpMethod.POST,"/api/v1/auth/logout").authenticated()
+                .requestMatchers(HttpMethod.GET,"/api/v1/users/me","/api/v1/users/{accountId}",
+                        "/api/v1/farmers/{farmerId}","/api/v1/traders/{traderId}").authenticated()
+                .requestMatchers(HttpMethod.PUT,"/api/v1/users/me").authenticated()
                 .anyRequest().denyAll());
         return http.build();
     }
