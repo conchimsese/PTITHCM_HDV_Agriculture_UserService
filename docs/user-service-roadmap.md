@@ -1,12 +1,12 @@
 # Roadmap triển khai User Service MVP
 
-Cập nhật: 19/10/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Service và Contract chung MVP v2.1; `Prompt_User_Service.md`. Trạng thái bên dưới phân biệt phần đã kiểm chứng và công việc còn lại.
+Cập nhật: 02/11/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Service và Contract chung MVP v2.1; `Prompt_User_Service.md`. Trạng thái bên dưới phân biệt phần đã kiểm chứng và công việc còn lại.
 
 ## Nguyên tắc và hiện trạng
 
 - Giữ Java 21/Spring Boot 3.5.x/Maven, PostgreSQL/Flyway và port 8081. Chỉ sửa repo User; không đọc DB hoặc tự sửa code service khác.
 - Ưu tiên chỉ đạo mới nhất → Conflict đã chốt → Contract v2.1 → rule → service spec. Không tự thêm API/role/nghiệp vụ ngoài BA.
-- Schema đã có không đồng nghĩa nghiệp vụ đã được triển khai. Outbox đã có lớp ghi event cập nhật profile; relay, media storage và reputation consumer chưa triển khai.
+- Schema đã có không đồng nghĩa nghiệp vụ đã được triển khai. Outbox đã có lớp ghi event profile/account và ý định email; relay, email worker, media storage và reputation consumer chưa triển khai.
 - Các phase dưới tách nhỏ nhóm công việc trong prompt gốc để dễ nghiệm thu: Phase 0 tương ứng nền; Phase 1 tương ứng auth; Phase 2–4 tương ứng profile/Admin/media; Phase 5 tương ứng outbox; Phase 6 tương ứng reputation; Phase 7 kiểm chứng tích hợp và bàn giao.
 - Mỗi phase có code, migration nếu cần, test phù hợp, fixtures và cập nhật README/implementation-decisions. Không sửa migration đã áp dụng; dùng migration mới. Không commit/push hoặc thay đổi repo khác nếu lượt thực hiện chưa được yêu cầu.
 
@@ -15,13 +15,13 @@ Cập nhật: 19/10/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Servi
 | 0 | Nền project, schema, lỗi API, access-state | Đã có code và kiểm chứng local |
 | 1 | Authentication, OTP, JWT, refresh/logout, rate limit, seed | Đã có code và kiểm chứng; cấu hình Admin/SMTP thật còn tùy môi trường |
 | 2 | Private/public profile | Đã triển khai, kiểm chứng và ghi outbox; chưa relay |
-| 3 | Admin quản lý account và khóa/mở | Chưa triển khai |
+| 3 | Admin quản lý account và khóa/mở | Đã hoàn thành và kiểm chứng API/policy/outbox; delivery Kafka/email thuộc Phase 5 |
 | 4 | Upload/read avatar | Chưa triển khai; nhánh Admin cần chốt persistence/DTO |
-| 5 | Outbox relay, profile event, email khóa/mở | Chưa triển khai |
+| 5 | Outbox relay, profile event, email khóa/mở | Đã có writer profile/account/email intent; chưa có relay/worker/bootstrap |
 | 6 | Reputation consumer và event kết quả | Chưa triển khai |
 | 7 | Kiểm thử tích hợp, Docker và bàn giao | Mới có kiểm chứng nền/auth, chưa nghiệm thu toàn service |
 
-Kết quả kiểm chứng mới nhất: `clean verify` ngày 19/10/2026 đạt 69 test, gồm 20 unit/Web/security và 49 integration trên PostgreSQL/Mailpit thật; không failure/error/skipped. Phase 2 bổ sung 19 test profile. Hai Admin local đã seed và xác minh OTP trong lượt demo trước; đây không phải credential production. Dockerfile ứng dụng chưa được build/run image.
+Kết quả kiểm chứng mới nhất: `clean verify` ngày 02/11/2026 đạt **92 test**, gồm 25 unit/Web/security và 67 integration trên PostgreSQL/Mailpit thật; không failure/error/skipped. Phase 3 có 5 Web test và 18 PostgreSQL integration test; lỗi hồi quy 8 FoundationPostgresIT đã được sửa. Log local `.tools/phase3-verify.log`, report tại `target/surefire-reports` và `target/failsafe-reports`. Hai Admin local đã seed và xác minh OTP trong lượt demo trước; không kiểm chứng lại identity demo trong lượt Phase 3 và đây không phải credential production. Dockerfile ứng dụng chưa được build/run image.
 
 ## Phase 0 — Nền project và persistence
 
@@ -62,6 +62,8 @@ Kết quả kiểm chứng mới nhất: `clean verify` ngày 19/10/2026 đạt 
 **Điều kiện nghiệm thu:** người dùng đọc/sửa đúng hồ sơ; dữ liệu private không xuất hiện trong public response/outbox; lỗi DB không để lại profile update một phần. Đồng bộ sang Trading chỉ được coi hoàn tất sau Phase 5.
 
 ## Phase 3 — Admin quản lý account và trạng thái
+
+**Đã hoàn thành 02/11/2026:** đủ sáu endpoint Admin; DTO theo BA, PATCH allowlist, phân trang/filter/sort, soft INACTIVE, revoke refresh và transactional account/profile/email outbox. Khóa advisory transaction chung được lấy trước account row lock; kiểm lại Admin ACTIVE trong transaction, bảo vệ cả thao tác đồng thời. Auth tắt thì không khởi tạo module Admin. Chi tiết quyết định và kết quả kiểm chứng tại `implementation-decisions.md`.
 
 **Phụ thuộc:** Phase 1–2; hạ tầng ghi outbox cùng transaction từ Phase 2.
 
@@ -164,4 +166,4 @@ Không mở lại D01–D07 đã chốt; chỉ làm rõ các invariant triển k
 - Phase 5–6: Kafka bootstrap/security/topic configuration, service keys, fixtures và invariant của các owner.
 - Phase 7: origin/domain thật, deployment secrets, public key set/rotation và xác nhận tích hợp từ các owner.
 
-**Bước triển khai tiếp theo: Phase 3 — Admin quản lý account và trạng thái**, sử dụng lớp ghi outbox transactional đã có; relay Kafka vẫn thuộc Phase 5.
+**Bước triển khai tiếp theo: Phase 4 — Avatar và lưu trữ ảnh**; cần chốt persistence/DTO cho avatar ADMIN. Relay Kafka và email worker vẫn thuộc Phase 5.

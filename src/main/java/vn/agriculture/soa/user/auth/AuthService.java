@@ -12,6 +12,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -26,6 +28,7 @@ import vn.agriculture.soa.user.error.ApiException;
 @Service
 @ConditionalOnProperty(name="user.auth.enabled",havingValue="true",matchIfMissing=true)
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final PasswordEncoder passwords;
@@ -72,6 +75,9 @@ public class AuthService {
         return new Account(id,username,email,passwordHash,role,"UNVERIFIED",now);
     }
     public Registered register(Register request) {
+        return register(request, null);
+    }
+    private Registered register(Register request, UUID adminId) {
         if (request.role()==AccountRole.ADMIN) { throw invalid("Public registration supports FARMER and TRADER only"); }
         passwordPolicy(request.password());
         var profile=request.profile();
@@ -86,6 +92,13 @@ public class AuthService {
         Delivery delivery;
         try {
             delivery=tx.execute(status -> {
+                if (adminId != null) {
+                    jdbc.execute("SELECT pg_advisory_xact_lock(hashtext('user-service-admin-mutations'))");
+                    Account admin = lock(adminId);
+                    if (admin == null || admin.role() != AccountRole.ADMIN || !admin.status().equals("ACTIVE")) {
+                        throw new ApiException(HttpStatus.CONFLICT,"INVALID_STATE_TRANSITION","Administrator is no longer active");
+                    }
+                }
                 Account a=insert(request.username(),request.email(),encoded,request.role());
                 if (farmer) {
                     jdbc.update("INSERT INTO farmer_profiles(farmer_id,full_name,phone,address,province,district) VALUES (?,?,?,?,?,?)",
@@ -101,6 +114,14 @@ public class AuthService {
         }
         Account a=delivery.account();
         return new Registered(a.id(),a.username(),a.email(),a.role(),a.status(),a.createdAt(),deliver(delivery)?"SENT":"FAILED");
+    }
+    public Registered registerByAdmin(Register request, UUID adminId) {
+        if (request.role() == AccountRole.ADMIN) {
+            throw invalid("Admin cannot create ADMIN accounts via API; use seed configuration");
+        }
+        Registered registered = register(request, adminId);
+        log.info("SECURITY AUDIT: Admin [{}] created account [{}] with role [{}]", adminId, registered.accountId(), registered.role());
+        return registered;
     }
     private boolean deliver(Delivery delivery) {
         try { return mail.send(delivery.account().email(),delivery.code()); }

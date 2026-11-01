@@ -1,5 +1,28 @@
 # Quyết định triển khai giai đoạn nền
 
+## Phase 3 — Admin account và chuyển trạng thái — 02/11/2026
+
+- Hoàn thiện sáu endpoint theo BA User §6–7. Dùng lại register validation/OTP; tạo FARMER/TRADER UNVERIFIED, cấm ADMIN. Transaction kiểm lại caller ADMIN ACTIVE trước insert; account/profile/OTP commit trước SMTP. Không thêm API/role/migration hoặc bảng audit.
+- DTO AccountSummary đúng sáu field BA; detail bổ sung emailVerifiedAt/profile, ADMIN profile=null. Không mở rộng response với reputation/flags/versions nội bộ. List đọc REPEATABLE_READ, filter role/status, sort createdAt DESC/accountId DESC; page mặc định0,size20,max100.
+- PATCH chỉ allowlist theo role, giữ field vắng và cho optional=null. Thay đổi public snapshot tăng profile_version; khi target ẩn ghi tombstone publicVisible=false/profile=null. Đổi riêng contacts không phát public event. Avatar vẫn chỉ reference metadata attached của owner, storage/API thuộc Phase 4.
+- Tất cả Admin mutation dùng `pg_advisory_xact_lock(hashtext('user-service-admin-mutations'))` trước bất kỳ account row lock, rồi khóa/kiểm caller ACTIVE và khóa target. Count Admin ACTIVE nằm trong transaction đã serialize. Không khóa target rồi mới khóa tất cả Admin, tránh deadlock hai Admin vô hiệu nhau. Khóa chung có phạm vi PostgreSQL transaction, dùng được giữa nhiều instance; đánh đổi serialize Admin writes ở MVP. Auth login/refresh vẫn khóa account trước refresh, không lấy advisory lock nên không tạo thứ tự ngược.
+- Cấm self-lock/self-disable/self-delete; request mutation đang chờ nhưng actor đã bị vô hiệu trả409 INVALID_STATE_TRANSITION. Filter vẫn chặn JWT cũ ở request mới bằng403 ACCOUNT_NOT_ACTIVE. LOCKED/INACTIVE revoke refresh atomic. Restore không bypass verified/reputation_lock/score; ADMIN không áp score. Admin khóa thêm khi account đã reputation-lock ghi admin_lock riêng, không làm mất nguyên nhân khóa hoặc tự reset điểm.
+- Thay đổi status tăng account_version; đổi visibility tăng profile_version, ghi profile tombstone/snapshot. ACCOUNT_LOCKED/UNLOCKED envelope đúng Contract v2.1 §9, data chỉ accountId/reasonCode/accountVersion, recipient/reference là accountId. reasonCode ADMIN_LOCK/ADMIN_UNLOCK là mã kỹ thuật cho thao tác quản trị; reason tự do nằm riêng channel EMAIL. Không đưa contacts hoặc lời giải thích tùy ý vào Kafka; audit log chỉ actor/target/action.
+- Ghi KAFKA account + EMAIL intent + profile event trong cùng transaction. Không có relay/email worker ở Phase 3; SMTP lỗi khi delivery khóa/mở sau này không rollback business. Nhánh profile public bị thiếu khi restore fail503 và rollback thay vì phát snapshot null cho account ACTIVE.
+- Module Admin controller/service dùng cùng điều kiện `user.auth.enabled` với AuthService, khắc phục FoundationPostgresIT không khởi động khi auth=false.
+
+Verification: Maven 3.9.11/JDK21, `mvnw.cmd -B -o -Dmaven.repo.local=<workspace>/.m2 -Ddebug=false clean verify` (thực thi bằng Maven đã bootstrap trong `.tools`) đạt **BUILD SUCCESS, 92 test**: 25 unit/Web/security và 67 integration, 0 failure/error/skipped. PostgreSQL17 và Mailpit chạy Testcontainers biệt lập; không chạy TRUNCATE trên DB người dùng. Admin gồm 5 Web và 18 PostgreSQL test. Log local `.tools/phase3-verify.log`; report tại target/surefire-reports và target/failsafe-reports. Không build/run image ứng dụng hoặc claim tích hợp liên service/SMTP production trong Phase 3.
+
+| Requirement Phase 3 | Code | Test và kết quả |
+| --- | --- | --- |
+| ADMIN ACTIVE; create FARMER/TRADER UNVERIFIED, OTP sau commit | AdminAccountController/Service, AuthService.registerByAdmin | accessControl, createAccount, adminCreateCommitsBeforeSmtp: đạt |
+| List/filter/page/sort, DTO BA, PATCH allowlist | AdminAccountRepository, AdminDtos, mergePatch | listAccounts, accountDtosAndPagination, patchProfile: đạt |
+| Self/last Admin, concurrent mutations | lockAndCheckAdmin, advisory lock trước account | selfAction_and_lastAdminProtection, concurrentAdmins: đạt, một200/một409 và còn một ACTIVE |
+| Restore verified/score/flags, ADMIN score=null | updateStatus | restoreInvariants, reputationLockAndAdminLock: đạt |
+| Revoke refresh, JWT cũ, lock-vs-refresh/login | updateStatus/deleteAccount, AuthService, CurrentAccountFilter | updateStatus_lockRevokesTokens, adminLockRacingRefreshOrLogin, softDelete: đạt |
+| Atomic status/profile/outbox, đúng payload/visibility | AccountOutboxWriter, ProfileOutboxWriter | emailOutboxFailure, profileOutboxFailure, accountOutboxHasContractPayload, hiddenProfilePatch: đạt |
+| Không hồi quy auth=false | Điều kiện module Admin | 8 FoundationPostgresIT và toàn bộ auth/profile regression: đạt |
+
 ## Giai đoạn authentication — 18/10/2026
 
 Chỉ đạo mới nhất triển khai giai đoạn tiếp theo của kế hoạch: auth/OTP/SMTP/JWT/refresh/logout/rate limits/seed. Không triển khai profile/Admin CRUD, avatar, outbox relay hoặc reputation consumer trong lượt này. Không commit/push.

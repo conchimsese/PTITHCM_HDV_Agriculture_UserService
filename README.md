@@ -1,4 +1,4 @@
-# User Service — nền, authentication và profile
+# User Service — nền, authentication, profile và Admin
 
 Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port mặc định **8081**. Nguồn yêu cầu: `docs/BA - SOA.docx` (User Service và Contract chung MVP v2.1) và `docs/Prompt_User_Service.md`.
 
@@ -14,7 +14,28 @@ Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port m
 
 - Phase 2: private/public profile, PUT toàn bộ theo role; profileVersion và outbox snapshot công khai ghi cùng transaction.
 
-Chưa triển khai Admin CRUD, upload/read avatar, Kafka relay hoặc reputation consumer. Outbox đã nhận sự kiện cập nhật profile, chưa phát sang Trading.
+- Phase 3: sáu API Admin tạo/list/detail/PATCH profile/PATCH status/soft DELETE; bảo vệ self/last Admin, revoke refresh và ghi account/profile/email outbox cùng transaction.
+
+Chưa triển khai upload/read avatar, Kafka relay, email worker khóa/mở hoặc reputation consumer. Outbox đã nhận sự kiện profile/account và ý định email, chưa phát sang broker hay gửi mail khóa/mở.
+
+## API Admin — Phase 3
+
+Tất cả endpoint dưới yêu cầu Bearer của ADMIN ACTIVE; response có `Cache-Control: private, no-store`.
+
+| Method | Path | Request / kết quả |
+| --- | --- | --- |
+| POST | `/api/v1/admin/accounts` | Body giống register (xem `docs/fixtures/register-farmer.json`), chỉ FARMER/TRADER; 201 UNVERIFIED + verificationEmailStatus |
+| GET | `/api/v1/admin/accounts?page=0&size=20&role=FARMER&status=ACTIVE` | `{items,page,size,totalElements,totalPages}`, size tối đa100; createdAt DESC/accountId DESC |
+| GET | `/api/v1/admin/accounts/{accountId}` | AccountSummary + emailVerifiedAt + profile; ADMIN profile=null |
+| PATCH | `/api/v1/admin/accounts/{accountId}` | Chỉ sửa field profile hiện diện; xem `docs/fixtures/admin-profile-patch.json`; 200 detail |
+| PATCH | `/api/v1/admin/accounts/{accountId}/status` | `{status,reason}`, xem `docs/fixtures/admin-status-patch.json`; 200 AccountSummary |
+| DELETE | `/api/v1/admin/accounts/{accountId}` | 204, soft INACTIVE, giữ account/profile |
+
+AccountSummary đúng sáu field `accountId,username,email,role,status,createdAt`. Không trả flags/version/reputation nội bộ. Profile PATCH giữ field vắng, cho null ở optional; không nhận role/email/password/status/reputation. Avatar chỉ nhận reference media đã attached thuộc account đích; chưa có upload API ở Phase 3.
+
+Self-lock/self-disable/self-delete trả409. Mọi Admin mutation lấy cùng PostgreSQL transaction advisory lock trước account row lock và kiểm lại caller ACTIVE. Request đã qua filter nhưng Admin vừa bị vô hiệu trả409; request mới dùng JWT cũ trả403. Không thể vô hiệu cả hai Admin đồng thời. Restore cần verified, không reputation_lock và score>0 với FARMER/TRADER; ADMIN có score=null. Khóa lại account đã reputation-lock vẫn ghi admin_lock độc lập, không reset điểm.
+
+LOCKED/INACTIVE revoke mọi refresh trong transaction. Khi đổi trạng thái/public profile, ghi outbox cùng business transaction; lỗi ghi email intent cũng rollback status/token/version/Kafka intent. Account Kafka payload chỉ `{accountId,reasonCode,accountVersion}`, reasonCode ổn định `ADMIN_LOCK`/`ADMIN_UNLOCK`; lý do tự do chỉ ở channel EMAIL, không đưa lên Kafka hoặc log. Gửi OTP tạo account sau commit; SMTP lỗi vẫn giữ account UNVERIFIED và trả201/FAILED. Relay và gửi mail khóa/mở thuộc Phase 5.
 
 ## Chạy local trên máy
 
@@ -127,7 +148,7 @@ PUT khóa account, cập nhật profile, tăng profileVersion và ghi snapshot p
 
 Outbox topic `soa.user.profile.v1`, aggregate_id=accountId (Kafka key khi relay), event USER_PROFILE_UPDATED/version1, recipientIds=[]; snapshot chỉ chứa displayName,avatarUrl,province,district,joinedAt. Phase 5 sẽ làm relay, các trigger verify/status/avatar và bootstrap; hiện chưa đồng bộ sang Trading.
 
-Fixtures: `docs/fixtures/put-farmer-profile.json`, `put-trader-profile.json`, `user-profile-updated.json`. `clean verify` đã đạt **69 test** (20 unit/Web/security + 49 integration), gồm 19 test profile: whitelist, ownership, validation, rollback và cập nhật đồng thời.
+Fixtures: `docs/fixtures/put-farmer-profile.json`, `put-trader-profile.json`, `user-profile-updated.json`. Lần kiểm chứng Phase 2 đạt 69 test. Sau Phase 3, `clean verify` ngày 02/11/2026 đạt **92 test** (25 unit/Web/security + 67 integration), gồm 19 test profile và 23 test Admin; không failure/error/skipped. Log local `.tools/phase3-verify.log`, report tại `target/surefire-reports` và `target/failsafe-reports`.
 
 Trên Windows, dừng process đang chạy JAR trước khi Maven repackage để tránh khóa file. Dùng `spring-boot:run` khi phát triển local.
 
