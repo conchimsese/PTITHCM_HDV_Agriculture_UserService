@@ -60,6 +60,8 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET,"/api/v1/users/me","/api/v1/users/{accountId}",
                         "/api/v1/farmers/{farmerId}","/api/v1/traders/{traderId}").authenticated()
                 .requestMatchers(HttpMethod.PUT,"/api/v1/users/me").authenticated()
+                .requestMatchers(HttpMethod.POST,"/api/v1/users/me/avatar").authenticated()
+                .requestMatchers(HttpMethod.GET,"/api/v1/users/media/{mediaId}").authenticated()
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().denyAll());
         return http.build();

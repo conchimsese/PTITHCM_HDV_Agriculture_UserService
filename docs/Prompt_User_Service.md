@@ -48,7 +48,7 @@ Triển khai chính xác các endpoint ở User §6–7; gồm auth, GET/PUT me,
 - Cấm self-lock/self-disable/self-delete và vô hiệu Admin ACTIVE cuối cùng; bảo vệ cả hai Admin đồng thời tự vô hiệu người còn lại, không chỉ COUNT ngoài transaction.
 - LOCKED/INACTIVE revoke mọi refresh cùng transaction. Restore không bypass verified/score/lock flags; ADMIN không áp score>0 vì reputation=null.
 - Avatar Farmer/Trader: JPEG/PNG/WebP≤5MiB/20MP, decode/re-encode; UUID storage key,volume riêng ngoài webroot; kiểm quyền metadata,không URL ngoài/path traversal. Metadata + profile + profile-event outbox commit nhất quán; không trả thành công nếu file chưa bền vững. Download Bearer/private,no-store,nosniff.
-- BA cho ADMIN upload avatar nhưng ADMIN profile=null và chưa có nơi lưu/read DTO rõ: cô lập nhánh ADMIN avatar để chốt persistence/DTO, không tạo Farmer/Trader profile giả cho ADMIN và không báo tính năng hoàn tất.
+- Quyết định người dùng02/11/2026 về nhánh ADMIN avatar: lưu trong media_assets/resource_id=accountId, upload trả avatarUrl, chỉ owner ADMIN đọc; GET me giữ profile=null. Không tạo Farmer/Trader profile giả, không mở rộng private DTO/public event.
 
 ## 5. Kafka/outbox/reputation
 

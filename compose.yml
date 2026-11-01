@@ -19,6 +19,7 @@ services:
     build: .
     environment:
       SERVER_PORT: 8081
+      MEDIA_STORAGE_DIR: /var/lib/user-media
       DB_URL: jdbc:postgresql://user-db:5432/user_db
       DB_USERNAME: ${DB_USERNAME:-user_service}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
@@ -46,6 +47,7 @@ services:
       ADMIN_2_PASSWORD: ${ADMIN_2_PASSWORD:-}
     volumes:
       - ./secrets/local-auth:/run/user-secrets:ro
+      - user-media-data:/var/lib/user-media
     ports:
       - "127.0.0.1:8081:8081"
     depends_on:
@@ -58,3 +60,4 @@ services:
       - "127.0.0.1:8025:8025"
 volumes:
   user-db-data:
+  user-media-data:

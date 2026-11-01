@@ -29,7 +29,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({MethodArgumentTypeMismatchException.class, MethodArgumentNotValidException.class,
-            ConstraintViolationException.class, HttpMessageNotReadableException.class})
+            ConstraintViolationException.class, HttpMessageNotReadableException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class})
     ResponseEntity<ApiError> validation(Exception ex, HttpServletRequest request) {
         return error(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Invalid request", request);
     }

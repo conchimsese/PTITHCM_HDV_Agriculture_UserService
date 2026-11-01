@@ -1,5 +1,31 @@
 # Quyết định triển khai giai đoạn nền
 
+## Phase 4 — Avatar và storage — 02/11/2026
+
+- POST /api/v1/users/me/avatar (multipart `file`,201 Uploaded) và GET /api/v1/users/media/{mediaId} (Bearer ACTIVE). Uploaded chỉ có mediaId/avatarUrl/contentType/sizeBytes. Download trả bytes đúng contentType và Content-Length, private,no-store,nosniff; không tiết lộ storage path.
+- **Người dùng đã đồng ý trong lượt Phase 4:** avatar ADMIN lưu `media_assets` với resource_id=accountId; chỉ chính owner ADMIN đọc. Upload trả avatarUrl, GET me vẫn profile=null. Không tạo profile Farmer/Trader giả, không mở rộng private DTO, không phát public Farmer/Trader event cho ADMIN. Upload cũ vẫn attached và owner có thể đọc bằng mediaId; không thêm API liệt kê media hoặc đọc avatar của ADMIN khác.
+- Schema V1 đủ dùng; không sửa migration hoặc thêm bảng/cột. Farmer/Trader lưu media.resource_id=accountId, attached_at cùng transaction cập nhật avatar_url/profile_version/outbox. POST avatar giữ nguyên các field profile khác. Mỗi upload Farmer/Trader thành công tăng profile_version một lần; ADMIN chỉ touch updated_at.
+- Không dùng filename/path hoặc MIME client để chọn định dạng. ImageIO nhận diện nội dung, kiểm width×height bằng long trước decode (tối đa20.000.000 pixel), giới hạn input/output5MiB, decode rồi tạo ảnh chỉ chứa pixel và re-encode không copy metadata. JPEG→JPEG, PNG/WebP→PNG (giữ alpha); contentType/size/hash theo file sau xử lý. Không fetch URL ngoài, không giữ animation/EXIF của input.
+- JDK21 có JPEG/PNG ImageIO nhưng không có WebP reader. Thêm `com.twelvemonkeys.imageio:imageio-webp:3.15.3`, pin version vì không thuộc Spring Boot BOM; decoder pure Java, không native executable. Đối chiếu [upstream release](https://github.com/haraldk/TwelveMonkeys/releases/tag/twelvemonkeys-3.15.3) và [plugin documentation](https://github.com/haraldk/TwelveMonkeys). Fixture WebP upstream có license trong src/test/resources/media.
+- MEDIA_STORAGE_DIR mặc định ./local-data/media cho local; Compose đặt /var/lib/user-media trên named volume user-media-data, app user có quyền ghi. Storage chỉ resolve UUID do server tạo, CREATE_NEW và NOFOLLOW_LINKS, không overwrite file. FileChannel.force(true) trước commit DB; Linux fsync directory entry, Windows không hỗ trợ directory fsync qua FileChannel nên chỉ force file. Bảo đảm process restart; độ bền khi mất điện phụ thuộc filesystem/storage của môi trường bàn giao.
+- Upload khóa account và kiểm lại ACTIVE trong transaction, rồi advisory lock theo storage key, persist file, insert attached metadata, update profile/version/outbox rồi commit. File lỗi trả503 và không commit DB. DB/outbox lỗi để lại file orphan, không báo201. Không xóa ngay trong catch để tránh xóa nhầm khi kết quả DB commit chưa rõ.
+- Download dùng một SQL kiểm caller ACTIVE và quyền owner hoặc target Farmer/Trader ACTIVE có avatar_url hiện đang trỏ đúng media; historical avatar không còn public nhưng owner vẫn đọc được. ADMIN media chỉ owner đọc. Media thiếu/unattached/sai resource/không có quyền trả404. File missing/corrupt/size/hash sai trả503 generic. JWT cũ của account LOCKED/INACTIVE bị filter chặn403.
+- Cleanup03:30 UTC mỗi ngày: file không có metadata và metadata unattached quá24h. Hợp nhất filesystem candidates với DB metadata-only orphan; lấy cùng advisory lock theo key rồi kiểm lại DB trong transaction. Không xóa media attached, kể cả avatar cũ không còn public. DB lỗi thì giữ file và retry lịch sau. Không follow symlink hoặc đụng tên file không phải UUID. Các instance phải dùng cùng media volume và cùng DB; local storage riêng từng instance không đủ cho nhiều replica.
+- Backup/restore media volume cùng user_db và giữ MEDIA_STORAGE_DIR ổn định khi restart. Kiểm chứng image Docker/backup restore/môi trường bàn giao thuộc Phase 7; không suy đã đạt từ Dockerfile/Compose.
+
+Verification: `verify` ngày02/11/2026 bằng Maven3.9.11/JDK21 đạt **BUILD SUCCESS,117 test**: 35 unit/Web/security và82 integration PostgreSQL17/Mailpit Testcontainers; không failure/error/skipped. Phase4 thêm10 unit (image/storage) và15 integration. Log local `.tools/phase4-verify.log`; report tại target/surefire-reports và target/failsafe-reports.
+
+| Requirement Phase 4 | Code | Test / kết quả |
+| --- | --- | --- |
+| JPEG/PNG/WebP thật, MIME giả, giới hạn5MiB/20MP, decode/re-encode | AvatarImages | 7 AvatarImagesTest: đạt; có fixture WebP thật, header quá pixel trước decode, truncated PNG, MIME/filename giả và bỏ trailing content |
+| UUID path, không overwrite, lưu qua vòng đời storage | MediaStorage | 3 MediaStorageTest: đạt; mở lại storage đọc nguyên bytes, chỉ scan UUID regular file, reject missing/oversized file |
+| Profile/version/outbox atomic; ADMIN owner-only, profile=null | AvatarService/Controller | farmerAndTraderUpload, adminAvatar, filesystemFailure, outboxFailure: đạt |
+| Bearer ACTIVE, owner/public ACTIVE, 404 ngoài quyền | SQL download, SecurityConfiguration | activeCallers, rejectsUnauthenticatedLocked, guessedMediaId, missingOrCorrupt: đạt |
+| Orphan24h, không xóa attached, DB lỗi fail closed | MediaCleanup | outboxFailure, cleanupDeletesOldUnattached, metadataMissingFile, cleanupFailsClosed, cleanupWaitsForInFlightUpload: đạt |
+| Upload đồng thời và upload-vs-lock | Account row lock + storage advisory lock | concurrentUploads, uploadRacingAccountLock: đạt, snapshot cuối phù hợp state |
+
+Persistence đã kiểm bằng mở lại adapter và test JAR thật: upload multipart qua HTTP, dừng JVM, khởi động JVM mới với cùng DB/media directory, GET ảnh và profile vẫn đúng bytes/reference. Test cũng xác nhận multipart quá5MiB trả413 ở servlet thật. Chưa chạy image Docker/restart deployment/backup restore trên môi trường bàn giao (Phase7).
+
 ## Phase 3 — Admin account và chuyển trạng thái — 02/11/2026
 
 - Hoàn thiện sáu endpoint theo BA User §6–7. Dùng lại register validation/OTP; tạo FARMER/TRADER UNVERIFIED, cấm ADMIN. Transaction kiểm lại caller ADMIN ACTIVE trước insert; account/profile/OTP commit trước SMTP. Không thêm API/role/migration hoặc bảng audit.

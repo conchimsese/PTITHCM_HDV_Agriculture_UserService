@@ -1,4 +1,4 @@
-# User Service — nền, authentication, profile và Admin
+# User Service — nền, authentication, profile, Admin và avatar
 
 Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port mặc định **8081**. Nguồn yêu cầu: `docs/BA - SOA.docx` (User Service và Contract chung MVP v2.1) và `docs/Prompt_User_Service.md`.
 
@@ -16,7 +16,9 @@ Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port m
 
 - Phase 3: sáu API Admin tạo/list/detail/PATCH profile/PATCH status/soft DELETE; bảo vệ self/last Admin, revoke refresh và ghi account/profile/email outbox cùng transaction.
 
-Chưa triển khai upload/read avatar, Kafka relay, email worker khóa/mở hoặc reputation consumer. Outbox đã nhận sự kiện profile/account và ý định email, chưa phát sang broker hay gửi mail khóa/mở.
+- Phase 4: upload/read avatar JPEG/PNG/WebP, lưu file bền vững ngoài webroot, metadata/profile/outbox atomic và cleanup orphan24h. ADMIN avatar chỉ owner đọc, GET me vẫn profile=null.
+
+Chưa triển khai Kafka relay, email worker khóa/mở hoặc reputation consumer. Outbox đã nhận sự kiện profile/account và ý định email, chưa phát sang broker hay gửi mail khóa/mở.
 
 ## API Admin — Phase 3
 
@@ -36,6 +38,29 @@ AccountSummary đúng sáu field `accountId,username,email,role,status,createdAt
 Self-lock/self-disable/self-delete trả409. Mọi Admin mutation lấy cùng PostgreSQL transaction advisory lock trước account row lock và kiểm lại caller ACTIVE. Request đã qua filter nhưng Admin vừa bị vô hiệu trả409; request mới dùng JWT cũ trả403. Không thể vô hiệu cả hai Admin đồng thời. Restore cần verified, không reputation_lock và score>0 với FARMER/TRADER; ADMIN có score=null. Khóa lại account đã reputation-lock vẫn ghi admin_lock độc lập, không reset điểm.
 
 LOCKED/INACTIVE revoke mọi refresh trong transaction. Khi đổi trạng thái/public profile, ghi outbox cùng business transaction; lỗi ghi email intent cũng rollback status/token/version/Kafka intent. Account Kafka payload chỉ `{accountId,reasonCode,accountVersion}`, reasonCode ổn định `ADMIN_LOCK`/`ADMIN_UNLOCK`; lý do tự do chỉ ở channel EMAIL, không đưa lên Kafka hoặc log. Gửi OTP tạo account sau commit; SMTP lỗi vẫn giữ account UNVERIFIED và trả201/FAILED. Relay và gửi mail khóa/mở thuộc Phase 5.
+
+## Avatar — Phase 4
+
+`POST /api/v1/users/me/avatar` nhận Bearer ACTIVE, multipart field `file`, tối đa5MiB/20MP. Chấp nhận nội dung JPEG/PNG/WebP thật, không tin filename/MIME client. 201 trả `{mediaId,avatarUrl,contentType,sizeBytes}`; JPEG được re-encode JPEG, PNG/WebP được re-encode PNG, bỏ metadata/animation. Response mô tả file sau xử lý; output lớn hơn5MiB trả413.
+
+Ví dụ (thay token/path bằng giá trị local, không lưu token vào file):
+
+```sh
+curl -X POST http://localhost:8081/api/v1/users/me/avatar \
+  -H "Authorization: Bearer <access-token>" -F "file=@avatar.webp"
+curl http://localhost:8081/api/v1/users/media/<mediaId> \
+  -H "Authorization: Bearer <access-token>" --output avatar.png
+```
+
+Download trả bytes, Content-Type/Length, `Cache-Control: private, no-store` và `X-Content-Type-Options: nosniff`. Owner ACTIVE đọc ảnh đã attached của mình; người khác ACTIVE chỉ đọc avatar hiện hành của Farmer/Trader ACTIVE. Ảnh cũ không còn public. Không được xem/không có media trả404; sai định dạng415, quá giới hạn413, file storage lỗi/corrupt503. Thiếu file multipart400. Không trả storage path.
+
+ADMIN lưu avatar trong media_assets, chỉ owner đọc theo mediaId từ response upload; GET me vẫn profile=null, không có public profile/event và không API list media. Farmer/Trader cập nhật profile/avatar cùng version/outbox trong transaction; relay thuộc Phase5.
+
+Local: đặt `MEDIA_STORAGE_DIR=./local-data/media` trong `.env` hoặc absolute path ngoài webroot. Docker Compose dùng `/var/lib/user-media` trên volume `user-media-data`; giữ volume khi restart/recreate app. Không chạy `docker compose down -v` trên môi trường cần giữ DB/media. Backup media volume cùng user_db, khôi phục cùng snapshot nhất quán. Nhiều replica phải chia sẻ cùng volume và DB.
+
+File phải lưu xong trước commit metadata/profile/outbox. Lỗi DB có thể để lại orphan; cleanup03:30 UTC dọn file/metadata unattached quá24h, giữ mọi attached media. DB unavailable thì cleanup giữ file. Không xóa avatar cũ đã attached bằng job orphan. Đã kiểm JAR thật: upload HTTP, restart JVM với cùng DB/media directory rồi tải lại ảnh đúng bytes; servlet thật trả413 khi multipart quá5MiB. Image/restart deployment/backup restore trên môi trường bàn giao được nghiệm thu Phase7.
+
+`verify` Phase4 đạt **117 test** (35 unit/Web/security +82 integration), 0 failure/error/skipped; thêm10 unit image/storage và15 integration avatar. Log local `.tools/phase4-verify.log`.
 
 ## Chạy local trên máy
 
@@ -118,7 +143,7 @@ TokenPair gồm accessToken,refreshToken,tokenType=Bearer,expiresIn=900,accountI
 
 OTP 6 số/10 phút/5 lần sai; resend 60 giây, tối đa 5 mã/giờ/email gồm register. Register commit account/profile/OTP trước SMTP; lỗi SMTP vẫn 201/FAILED và account UNVERIFIED, không xóa account. Verify/resend khóa account rồi OTP. Resend khi email không có/không cần verify trả 202. Daily cleanup 03:00 UTC không xóa lịch sử quota còn hiệu lực. Sai username/password trả 401; sau 10 lần sai/IP+username trong 15 phút trả 429/Retry-After. Không lấy X-Forwarded-For từ client để đổi bucket.
 
-Fixture test-only tại `docs/fixtures/register-farmer.json`; thay username/email trước khi thử, lấy OTP từ mail sink. Không dùng fixture password cho seed/production. Register ADMIN bị từ chối; avatarUrl khi register phải null hoặc vắng vì upload chưa triển khai.
+Fixture test-only tại `docs/fixtures/register-farmer.json`; thay username/email trước khi thử, lấy OTP từ mail sink. Không dùng fixture password cho seed/production. Register ADMIN bị từ chối; avatarUrl khi register phải null hoặc vắng. Upload avatar sau khi verify/login qua endpoint Phase4.
 
 ## Profile API — Phase 2
 
@@ -142,11 +167,11 @@ Farmer bắt buộc `fullName`, Trader bắt buộc `businessName`; tên không 
 
 Private response gồm accountId,username,email,role,status,createdAt,emailVerifiedAt,profile. Public response chỉ có sáu field accountId,displayName,avatarUrl,province,district,joinedAt; joinedAt là accounts.created_at. Không lộ email/phone/address/buyingArea/reputation. Response dùng `Cache-Control: private, no-store`. Caller bị khóa trả 403; target ADMIN/sai role/không ACTIVE/không tồn tại trả 404; lỗi persistence trả 503 DEPENDENCY_UNAVAILABLE.
 
-avatarUrl khác null chỉ chấp nhận đường dẫn tương đối `/api/v1/users/media/{UUID}` chuẩn, metadata thuộc chính owner/resource và đã attached. URL ngoài hoặc media tạm/owner khác bị từ chối. Upload, lưu file và API đọc media thuộc Phase 4, chưa triển khai tại đây; hiện có thể giữ avatarUrl=null.
+avatarUrl khác null chỉ chấp nhận đường dẫn tương đối `/api/v1/users/media/{UUID}` chuẩn, metadata thuộc chính owner/resource và đã attached. URL ngoài hoặc media tạm/owner khác bị từ chối. Upload/lưu file/API đọc media đã có ở Phase4; dùng avatarUrl từ response upload hoặc null.
 
 PUT khóa account, cập nhật profile, tăng profileVersion và ghi snapshot public vào outbox trong cùng transaction; outbox lỗi sẽ rollback. PUT lặp cùng dữ liệu không tạo event/version mới. Chỉ đổi phone/address/buyingArea không đổi public version và không tạo public event. account_version không đổi khi sửa profile. Dùng schema V1/V2 hiện có, không thêm migration.
 
-Outbox topic `soa.user.profile.v1`, aggregate_id=accountId (Kafka key khi relay), event USER_PROFILE_UPDATED/version1, recipientIds=[]; snapshot chỉ chứa displayName,avatarUrl,province,district,joinedAt. Phase 5 sẽ làm relay, các trigger verify/status/avatar và bootstrap; hiện chưa đồng bộ sang Trading.
+Outbox topic `soa.user.profile.v1`, aggregate_id=accountId (Kafka key khi relay), event USER_PROFILE_UPDATED/version1, recipientIds=[]; snapshot chỉ chứa displayName,avatarUrl,province,district,joinedAt. Đã có trigger profile/status/avatar; Phase5 sẽ làm relay, trigger verify và bootstrap. Hiện chưa đồng bộ sang Trading.
 
 Fixtures: `docs/fixtures/put-farmer-profile.json`, `put-trader-profile.json`, `user-profile-updated.json`. Lần kiểm chứng Phase 2 đạt 69 test. Sau Phase 3, `clean verify` ngày 02/11/2026 đạt **92 test** (25 unit/Web/security + 67 integration), gồm 19 test profile và 23 test Admin; không failure/error/skipped. Log local `.tools/phase3-verify.log`, report tại `target/surefire-reports` và `target/failsafe-reports`.
 

@@ -79,6 +79,8 @@ management:
     readinessstate:
       enabled: true
 user:
+  media:
+    storage-dir: ${MEDIA_STORAGE_DIR:./local-data/media}
   auth:
     enabled: ${AUTH_ENABLED:true}
     otp-hmac-secret: ${OTP_HMAC_SECRET:}

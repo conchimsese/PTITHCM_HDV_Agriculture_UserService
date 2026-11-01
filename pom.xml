@@ -14,6 +14,8 @@
   <description>Agriculture SOA User Service foundation</description>
   <properties><java.version>21</java.version></properties>
   <dependencies>
+    <!-- JDK ImageIO handles JPEG/PNG; this pure Java reader adds WebP decoding. -->
+    <dependency><groupId>com.twelvemonkeys.imageio</groupId><artifactId>imageio-webp</artifactId><version>3.15.3</version></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
