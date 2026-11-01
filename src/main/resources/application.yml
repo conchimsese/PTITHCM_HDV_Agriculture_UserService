@@ -42,6 +42,17 @@ spring:
       max-file-size: 5MB
       max-request-size: 6MB
   kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 3000
+        request.timeout.ms: 3000
+        delivery.timeout.ms: 5000
+        linger.ms: 0
     listener:
       auto-startup: false
     admin:
@@ -60,6 +71,10 @@ spring:
       mail.smtp.timeout: 5000
       mail.smtp.writetimeout: 5000
       mail.debug: false
+  task:
+    scheduling:
+      pool:
+        size: 2
 management:
   endpoints:
     web:
@@ -79,6 +94,11 @@ management:
     readinessstate:
       enabled: true
 user:
+  outbox:
+    kafka-enabled: ${OUTBOX_KAFKA_ENABLED:false}
+    email-enabled: ${OUTBOX_EMAIL_ENABLED:false}
+    bootstrap-enabled: ${PROFILE_BOOTSTRAP_ENABLED:false}
+    support-email: ${SUPPORT_EMAIL:}
   media:
     storage-dir: ${MEDIA_STORAGE_DIR:./local-data/media}
   auth:

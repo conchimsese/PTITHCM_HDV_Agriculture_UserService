@@ -27,7 +27,7 @@ public class AccountOutboxWriter {
                             UUID actorId, List<UUID> recipientIds, String referenceType, UUID referenceId, Data data) { }
     private record EmailPayload(UUID accountId, String email, String eventType, String reason, Instant occurredAt) { }
 
-    public void appendStatusChange(UUID accountId, String email, AccountStatus status, String reason,
+    public void appendStatusChange(UUID accountId, String email, boolean emailVerified, AccountStatus status, String reason,
                                    long accountVersion, Instant now, UUID actorId) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Account outbox requires the business transaction");
@@ -45,6 +45,7 @@ public class AccountOutboxWriter {
                     VALUES (?, ?, 'KAFKA', ?, ?, ?::jsonb, ?, ?)
                     """, eventId, accountId, eventType, TOPIC, kafkaPayload, Timestamp.from(now), Timestamp.from(now));
 
+            if (!emailVerified) { return; }
             UUID emailEventId = UUID.randomUUID();
             String emailJson = json.writeValueAsString(emailPayload);
             jdbc.update("""

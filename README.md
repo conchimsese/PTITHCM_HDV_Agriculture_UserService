@@ -1,4 +1,4 @@
-# User Service — nền, authentication, profile, Admin và avatar
+# User Service — authentication, profile, Admin, avatar và outbox
 
 Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port mặc định **8081**. Nguồn yêu cầu: `docs/BA - SOA.docx` (User Service và Contract chung MVP v2.1) và `docs/Prompt_User_Service.md`.
 
@@ -18,7 +18,9 @@ Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port m
 
 - Phase 4: upload/read avatar JPEG/PNG/WebP, lưu file bền vững ngoài webroot, metadata/profile/outbox atomic và cleanup orphan24h. ADMIN avatar chỉ owner đọc, GET me vẫn profile=null.
 
-Chưa triển khai Kafka relay, email worker khóa/mở hoặc reputation consumer. Outbox đã nhận sự kiện profile/account và ý định email, chưa phát sang broker hay gửi mail khóa/mở.
+- Phase5: Kafka relay và email worker độc lập; verify phát public snapshot atomic, bootstrap profile qua job opt-in. Migration V3 thêm delivery_sequence/index để giữ thứ tự cùng account/channel. Delivery được bật bằng cấu hình bên dưới.
+
+Chưa triển khai reputation consumer và các event kết quả xử lý reputation (Phase6). Tích hợp Trading/Payment/Notification thật và SMTP production thuộc Phase7.
 
 ## API Admin — Phase 3
 
@@ -61,6 +63,47 @@ Local: đặt `MEDIA_STORAGE_DIR=./local-data/media` trong `.env` hoặc absolut
 File phải lưu xong trước commit metadata/profile/outbox. Lỗi DB có thể để lại orphan; cleanup03:30 UTC dọn file/metadata unattached quá24h, giữ mọi attached media. DB unavailable thì cleanup giữ file. Không xóa avatar cũ đã attached bằng job orphan. Đã kiểm JAR thật: upload HTTP, restart JVM với cùng DB/media directory rồi tải lại ảnh đúng bytes; servlet thật trả413 khi multipart quá5MiB. Image/restart deployment/backup restore trên môi trường bàn giao được nghiệm thu Phase7.
 
 `verify` Phase4 đạt **117 test** (35 unit/Web/security +82 integration), 0 failure/error/skipped; thêm10 unit image/storage và15 integration avatar. Log local `.tools/phase4-verify.log`.
+
+## Outbox/Kafka/email — Phase 5
+
+Business update và outbox commit cùng transaction. Relay lấy pending row bằng `FOR UPDATE SKIP LOCKED`, gửi Kafka key=accountId với payload/eventId đã lưu; chỉ set published_at sau broker ACK. Lỗi retry theo5s,10s,20s… tối đa1h, giữ nguyên eventId/payload và không tự drop record. Bản gửi có thể lặp khi crash sau ACK hoặc SMTP đã nhận nhưng DB chưa commit: **at-least-once**, consumer phải dedup/version guard. Producer idempotence không bảo đảm exactly-once giữa DB và Kafka.
+
+V3 backfill backlog cũ theo created_at/eventId; event mới dùng sequence tăng dần, kể cả timestamp bằng nhau. Cùng account/channel, head chưa publish chặn các row sau; account khác và channel khác vẫn tiếp tục. Hai scheduled worker dùng scheduler pool2; mỗi lần xử lý tối đa20 row, commit từng row. Không giữ account row lock khi gửi network.
+
+Delivery opt-in mặc định tắt để không tự gửi backlog trước khi có môi trường đích. Điền trong `.env` khi chạy profile local (hoặc env/secret ở deployment):
+
+```properties
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_PORT=9092
+OUTBOX_KAFKA_ENABLED=true
+OUTBOX_EMAIL_ENABLED=true
+PROFILE_BOOTSTRAP_ENABLED=false
+SUPPORT_EMAIL=<your-support-email>
+MAIL_FROM=<your-verified-sender>
+```
+
+Email worker bật mà MAIL_FROM/SUPPORT_EMAIL thiếu hoặc sai định dạng sẽ fail startup. Gửi khóa/mở chỉ cho email đã verify, bằng SMTP riêng; nội dung khóa có SUPPORT_EMAIL, không gửi reason tự do/bằng chứng/contact bên kia. SMTP lỗi không rollback account hoặc chặn Kafka; Kafka không nhận payload EMAIL/OTP/token/password.
+
+Kafka local single-broker KRaft:
+
+```sh
+docker compose --profile messaging up -d user-kafka user-mail
+```
+
+App chạy host dùng localhost:9092; container User dùng user-kafka:19092. Nếu đổi KAFKA_PORT thì đổi bootstrap host tương ứng. Compose đã smoke test external advertised listener bằng Kafka AdminClient trên project biệt lập, rồi dọn project test. Broker local dùng PLAINTEXT/auto-create topic và không phải cấu hình production hay bảo đảm lưu trữ cluster. Deployment cần topic/partition/replication/security/retention do các owner thống nhất; Kafka properties/secrets được inject bằng cấu hình Spring Kafka, không commit credential.
+
+| Event | Topic/key | Trigger |
+| --- | --- | --- |
+| USER_PROFILE_UPDATED | soa.user.profile.v1 / accountId | Verify ACTIVE, PUT/PATCH public profile, avatar, Admin đổi visibility, bootstrap |
+| ACCOUNT_LOCKED/ACCOUNT_UNLOCKED | soa.user.account.v1 / accountId | Admin lock/restore; accountVersion và recipient/reference ACCOUNT/accountId |
+
+ADMIN không phát public profile. Khi ẩn: publicVisible=false/profile=null. Bootstrap opt-in qua `PROFILE_BOOTSTRAP_ENABLED=true` trong một lần chạy, sau đó trả false và restart cấu hình bình thường. Job keyset paging100, khóa từng account đọc state hiện tại và ghi snapshot; profile_version0 được nâng1, version hiện có giữ nguyên. Chạy lại tạo snapshot event mới cùng version, replica phải bỏ duplicate/old version. Không có public bootstrap API và không đọc user_db từ Trading.
+
+Quan sát pending/retry bằng `scripts/Outbox-Status.sql`; query không in payload email. Backlog tăng/attempt_count tăng cần kiểm tra broker/topic/SMTP/config. Sửa nguyên nhân rồi đợi retry; không xóa pending, sửa payload hoặc đổi eventId để ép qua. Nếu cần replay một Kafka event đã publish, phối hợp owner consumer, giữ nguyên eventId/payload, chỉ reset marker/available_at của đúng event trong DB bằng thao tác vận hành có kiểm soát. Không tự replay email vì có thể gửi trùng. Chưa có DLT consumer ở Phase5; retry/DLT quyết định Payment→User thuộc Phase6.
+
+Fixtures giao cho owner: `docs/fixtures/user-profile-updated.json`, `account-locked.json`, `account-unlocked.json`; consumer profile fixture tại `src/test/java/vn/agriculture/soa/user/fixtures/ProfileReplica.java`. Đây là fixture hợp đồng, chưa chứng minh repo Trading/Notification thật đã tích hợp.
+
+`clean verify` ngày02/11/2026 đạt **133 test** (36 unit/Web/security +97 integration), 0 failure/error/skipped. Phase5 thêm16 test, gồm13 Kafka/PostgreSQL/Mailpit integration và các test verify rollback, Admin email verified, mail config. Log local `.tools/phase5-verify.log`.
 
 ## Chạy local trên máy
 
@@ -171,7 +214,7 @@ avatarUrl khác null chỉ chấp nhận đường dẫn tương đối `/api/v1
 
 PUT khóa account, cập nhật profile, tăng profileVersion và ghi snapshot public vào outbox trong cùng transaction; outbox lỗi sẽ rollback. PUT lặp cùng dữ liệu không tạo event/version mới. Chỉ đổi phone/address/buyingArea không đổi public version và không tạo public event. account_version không đổi khi sửa profile. Dùng schema V1/V2 hiện có, không thêm migration.
 
-Outbox topic `soa.user.profile.v1`, aggregate_id=accountId (Kafka key khi relay), event USER_PROFILE_UPDATED/version1, recipientIds=[]; snapshot chỉ chứa displayName,avatarUrl,province,district,joinedAt. Đã có trigger profile/status/avatar; Phase5 sẽ làm relay, trigger verify và bootstrap. Hiện chưa đồng bộ sang Trading.
+Outbox topic `soa.user.profile.v1`, aggregate_id=accountId (Kafka key), event USER_PROFILE_UPDATED/version1, recipientIds=[]; snapshot chỉ chứa displayName,avatarUrl,province,district,joinedAt. Phase5 đã có relay, trigger verify/profile/status/avatar và bootstrap. Delivery cần bật cấu hình; đồng bộ Trading thật được nghiệm thu Phase7.
 
 Fixtures: `docs/fixtures/put-farmer-profile.json`, `put-trader-profile.json`, `user-profile-updated.json`. Lần kiểm chứng Phase 2 đạt 69 test. Sau Phase 3, `clean verify` ngày 02/11/2026 đạt **92 test** (25 unit/Web/security + 67 integration), gồm 19 test profile và 23 test Admin; không failure/error/skipped. Log local `.tools/phase3-verify.log`, report tại `target/surefire-reports` và `target/failsafe-reports`.
 
@@ -246,4 +289,4 @@ Smoke-Local là kiểm tra nền nên cố ý tắt auth; kết quả này khôn
 
 ## Quyết định và công việc tiếp theo
 
-Xem `docs/implementation-decisions.md` cho đối chiếu BA cũ/v2.1, schema kỹ thuật và phạm vi chưa triển khai. Giai đoạn này cần DB credential, OTP secret, RSA keys/kid, SMTP/sender; email/password riêng hai Admin cần cung cấp để seed thật. SUPPORT_EMAIL và Kafka phục vụ các giai đoạn sau. Không dùng dữ liệu test để đánh dấu cấu hình production hoàn tất.
+Xem `docs/implementation-decisions.md` cho đối chiếu BA cũ/v2.1, schema kỹ thuật và phạm vi chưa triển khai. Cần DB credential, OTP secret, RSA keys/kid, SMTP/sender; email/password riêng hai Admin để seed thật. SUPPORT_EMAIL và Kafka cần cấu hình khi bật delivery Phase5. Không dùng dữ liệu test để đánh dấu cấu hình production hoàn tất.

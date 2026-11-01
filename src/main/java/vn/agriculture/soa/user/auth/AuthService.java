@@ -37,6 +37,8 @@ public class AuthService {
     private final Clock clock;
     private final String otpSecret;
     private final String dummyHash;
+    private final vn.agriculture.soa.user.profile.ProfileRepository profiles;
+    private final vn.agriculture.soa.user.outbox.ProfileOutboxWriter profileOutbox;
     private record Account(UUID id, String username, String email, String passwordHash,
                            AccountRole role, String status, Instant createdAt) { }
     private record Delivery(Account account, String code) {
@@ -48,9 +50,12 @@ public class AuthService {
         T require() { if (error != null) { throw error; } return value; }
     }
     public AuthService(JdbcTemplate jdbc, PlatformTransactionManager manager, PasswordEncoder passwords,
-                       OtpMailer mail, JwtTokens jwt, Clock clock, AuthProperties settings) {
+                       OtpMailer mail, JwtTokens jwt, Clock clock, AuthProperties settings,
+                       vn.agriculture.soa.user.profile.ProfileRepository profiles,
+                       vn.agriculture.soa.user.outbox.ProfileOutboxWriter profileOutbox) {
         this.jdbc=jdbc; this.tx=new TransactionTemplate(manager); this.passwords=passwords;
         this.mail=mail; this.jwt=jwt; this.clock=clock; this.otpSecret=settings.otpHmacSecret();
+        this.profiles=profiles; this.profileOutbox=profileOutbox;
         if (otpSecret == null || otpSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("OTP_HMAC_SECRET must contain at least 32 bytes");
         }
@@ -165,7 +170,8 @@ public class AuthService {
     private ApiException badOtp() { return new ApiException(HttpStatus.BAD_REQUEST,"OTP_INVALID_OR_EXPIRED","Invalid or expired verification code"); }
     public void verify(Verify request) {
         // Return the error, commit failed-attempt counters, THEN throw outside the transaction.
-        ApiException error=tx.execute(status -> {
+        ApiException error;
+        try { error=tx.execute(status -> {
             Account a=byEmail(request.email());
             if (a==null || !"UNVERIFIED".equals(a.status())) { return badOtp(); }
             var codes=jdbc.queryForList("SELECT * FROM email_verification_otps WHERE account_id=? AND used_at IS NULL AND invalidated_at IS NULL FOR UPDATE",a.id());
@@ -181,8 +187,17 @@ public class AuthService {
             jdbc.update("UPDATE email_verification_otps SET used_at=? WHERE otp_id=?",Timestamp.from(now),otpId);
             jdbc.update("UPDATE accounts SET status='ACTIVE',email_verified_at=?,updated_at=?,account_version=account_version+1 WHERE account_id=?",
                     Timestamp.from(now),Timestamp.from(now),a.id());
+            if (a.role() != AccountRole.ADMIN) {
+                var account=profiles.account(a.id(),false).orElseThrow();
+                var details=profiles.details(account).orElseThrow();
+                long version=profiles.touchAccount(a.id(),true,now);
+                profileOutbox.append(a.id(),a.role(),version,
+                        vn.agriculture.soa.user.profile.ProfileDtos.snapshot(details,account.createdAt()),now,a.id());
+            }
             return null;
-        });
+        }); } catch (org.springframework.dao.DataAccessException | org.springframework.transaction.TransactionException ex) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,"DEPENDENCY_UNAVAILABLE","Account storage is temporarily unavailable");
+        }
         if (error!=null) { throw error; }
     }
     public TokenPair login(Login request,String ip) {

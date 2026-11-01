@@ -6,7 +6,7 @@ Cập nhật: 02/11/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Servi
 
 - Giữ Java 21/Spring Boot 3.5.x/Maven, PostgreSQL/Flyway và port 8081. Chỉ sửa repo User; không đọc DB hoặc tự sửa code service khác.
 - Ưu tiên chỉ đạo mới nhất → Conflict đã chốt → Contract v2.1 → rule → service spec. Không tự thêm API/role/nghiệp vụ ngoài BA.
-- Schema đã có không đồng nghĩa nghiệp vụ đã được triển khai. Đã có media storage/API và lớp ghi outbox profile/account/email intent; relay, email worker và reputation consumer chưa triển khai.
+- Schema đã có không đồng nghĩa nghiệp vụ đã được triển khai. Đã có media storage/API, transactional outbox, Kafka relay, email worker và profile bootstrap; reputation consumer chưa triển khai. Delivery cần bật bằng cấu hình môi trường.
 - Các phase dưới tách nhỏ nhóm công việc trong prompt gốc để dễ nghiệm thu: Phase 0 tương ứng nền; Phase 1 tương ứng auth; Phase 2–4 tương ứng profile/Admin/media; Phase 5 tương ứng outbox; Phase 6 tương ứng reputation; Phase 7 kiểm chứng tích hợp và bàn giao.
 - Mỗi phase có code, migration nếu cần, test phù hợp, fixtures và cập nhật README/implementation-decisions. Không sửa migration đã áp dụng; dùng migration mới. Không commit/push hoặc thay đổi repo khác nếu lượt thực hiện chưa được yêu cầu.
 
@@ -17,11 +17,11 @@ Cập nhật: 02/11/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Servi
 | 2 | Private/public profile | Đã triển khai, kiểm chứng và ghi outbox; chưa relay |
 | 3 | Admin quản lý account và khóa/mở | Đã hoàn thành và kiểm chứng API/policy/outbox; delivery Kafka/email thuộc Phase 5 |
 | 4 | Upload/read avatar | Đã hoàn thành và kiểm chứng; quyết định ADMIN đã được người dùng chấp thuận |
-| 5 | Outbox relay, profile event, email khóa/mở | Đã có writer profile/account/email intent; chưa có relay/worker/bootstrap |
+| 5 | Outbox relay, profile event, email khóa/mở | Đã triển khai và kiểm chứng local với Kafka/PostgreSQL/Mailpit; tích hợp owner thật thuộc Phase7 |
 | 6 | Reputation consumer và event kết quả | Chưa triển khai |
-| 7 | Kiểm thử tích hợp, Docker và bàn giao | Mới có kiểm chứng nền/auth, chưa nghiệm thu toàn service |
+| 7 | Kiểm thử tích hợp, Docker và bàn giao | Có kiểm chứng User local; chưa nghiệm thu tích hợp/liên service và môi trường bàn giao |
 
-Kết quả kiểm chứng mới nhất: `verify` ngày 02/11/2026 đạt **117 test**, gồm 35 unit/Web/security và 82 integration trên PostgreSQL/Mailpit thật; không failure/error/skipped. Phase4 thêm10 unit image/storage và15 integration avatar; các test nền/auth/profile/Admin tiếp tục đạt. Log local `.tools/phase4-verify.log`, report tại `target/surefire-reports` và `target/failsafe-reports`. Hai Admin local đã seed và xác minh OTP trong lượt demo trước; không kiểm chứng lại identity demo trong lượt Phase4 và đây không phải credential production. Dockerfile ứng dụng chưa được build/run image; persistence đã kiểm qua upload HTTP bằng JAR thật và restart JVM với cùng DB/media directory.
+Kết quả kiểm chứng mới nhất: `clean verify` ngày02/11/2026 đạt **133 test**, gồm36 unit/Web/security và97 integration; không failure/error/skipped. Kafka/PostgreSQL/Mailpit thật chạy biệt lập; đã kiểm broker down/recovery, post-ACK/SMTP crash, retry/duplicate/version/visibility, verify rollback và migration backlog V2→V3. Log local `.tools/phase5-verify.log`, report target/surefire-reports và target/failsafe-reports. Compose Kafka external listener đã smoke trên project test rồi dọn. JAR upload/restart vẫn đạt; chưa nghiệm thu image ứng dụng, SMTP production và tích hợp owner thật (Phase7).
 
 ## Phase 0 — Nền project và persistence
 
@@ -101,6 +101,8 @@ Kết quả kiểm chứng mới nhất: `verify` ngày 02/11/2026 đạt **117 
 
 ## Phase 5 — Outbox, Kafka và đồng bộ profile
 
+**Đã hoàn thành trong phạm vi User/local 02/11/2026:** relay chờ broker ACK, Kafka/email worker độc lập, retry giữ eventId/payload, verify→profile event atomic, bootstrap snapshot/tombstone và V3 sequence/index cho delivery order. Đã test broker down/recovery, post-ACK/SMTP crash, duplicate, multi-worker, version/visibility và email verified/support. Delivery mặc định tắt; bật OUTBOX_KAFKA_ENABLED/OUTBOX_EMAIL_ENABLED sau khi có môi trường đích, bootstrap opt-in riêng. Không coi fixture là Trading/Notification thật đã tích hợp.
+
 **Phụ thuộc:** Phase 2–4 đã ghi outbox cùng transaction; có Kafka test/local.
 
 **Công việc:**
@@ -167,4 +169,4 @@ Không mở lại D01–D07 đã chốt; chỉ làm rõ các invariant triển k
 - Phase 5–6: Kafka bootstrap/security/topic configuration, service keys, fixtures và invariant của các owner.
 - Phase 7: origin/domain thật, deployment secrets, public key set/rotation và xác nhận tích hợp từ các owner.
 
-**Bước triển khai tiếp theo: Phase 5 — Outbox relay, Kafka và đồng bộ profile**. Writer profile/account/email intent đã có; cần relay, email worker, trigger verify và bootstrap.
+**Bước triển khai tiếp theo: Phase 6 — Reputation consumer và kết quả xử lý**. Cần chốt invariant decision/reversal/unlock và retry/DLT riêng User theo các điểm còn lại trước khi nghiệm thu tích hợp Payment.

@@ -570,6 +570,17 @@ class AdminPostgresIT {
     }
 
     @Test
+    void lockingUnverifiedAccountNeverQueuesEmail() throws Exception {
+        User admin=user(AccountRole.ADMIN,AccountStatus.ACTIVE);
+        User target=user(AccountRole.FARMER,AccountStatus.UNVERIFIED);
+        jdbc.update("UPDATE accounts SET email_verified_at=NULL WHERE account_id=?",target.id());
+        assertThat(patchAs("/api/v1/admin/accounts/"+target.id()+"/status",admin,
+                new UpdateStatusRequest(AccountStatus.LOCKED,"Unverified account")).status()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE aggregate_id=? AND channel='EMAIL'",Integer.class,target.id())).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE aggregate_id=? AND channel='KAFKA'",Integer.class,target.id())).isEqualTo(1);
+    }
+
+    @Test
     void softDelete_setsInactiveAndRevokesTokens() throws Exception {
         User admin = user(AccountRole.ADMIN, AccountStatus.ACTIVE);
         User farmer = user(AccountRole.FARMER, AccountStatus.ACTIVE);

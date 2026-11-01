@@ -1,0 +1,16 @@
+{
+  "eventId": "66666666-6666-4666-8666-666666666666",
+  "eventType": "ACCOUNT_UNLOCKED",
+  "eventVersion": 1,
+  "sourceService": "user-service",
+  "occurredAt": "2026-11-02T00:05:00Z",
+  "actorId": "33333333-3333-4333-8333-333333333333",
+  "recipientIds": ["22222222-2222-4222-8222-222222222222"],
+  "referenceType": "ACCOUNT",
+  "referenceId": "22222222-2222-4222-8222-222222222222",
+  "data": {
+    "accountId": "22222222-2222-4222-8222-222222222222",
+    "reasonCode": "ADMIN_UNLOCK",
+    "accountVersion": 3
+  }
+}

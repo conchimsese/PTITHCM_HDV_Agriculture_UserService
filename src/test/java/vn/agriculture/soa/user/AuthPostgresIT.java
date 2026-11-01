@@ -122,6 +122,23 @@ class AuthPostgresIT {
         assertThat(result.status()).isEqualTo(200); return result.body();
     }
     private Reply refresh(String token) throws Exception { return post("/api/v1/auth/refresh",Map.of("refreshToken",token)); }
+    @Test void verificationWritesOnlyPublicSnapshotAndOutboxFailureRollsBackOtpAndActivation() throws Exception {
+        var registered=register("verify-outbox"); UUID id=UUID.fromString((String)registered.get("accountId"));
+        String code=mailbox.get("verify-outbox@example.test");
+        jdbc.execute("ALTER TABLE outbox ADD CONSTRAINT phase5_verify_failure CHECK (false) NOT VALID");
+        try {
+            assertThat(verify("verify-outbox@example.test",code).status()).isEqualTo(503);
+            assertThat(jdbc.queryForObject("SELECT status FROM accounts WHERE account_id=?",String.class,id)).isEqualTo("UNVERIFIED");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM email_verification_otps WHERE account_id=? AND used_at IS NOT NULL",Integer.class,id)).isZero();
+            assertThat(jdbc.queryForObject("SELECT profile_version FROM accounts WHERE account_id=?",Long.class,id)).isZero();
+        } finally { jdbc.execute("ALTER TABLE outbox DROP CONSTRAINT phase5_verify_failure"); }
+        assertThat(verify("verify-outbox@example.test",code).status()).isEqualTo(200);
+        var event=new ObjectMapper().readTree(jdbc.queryForObject("SELECT payload::text FROM outbox WHERE aggregate_id=?",String.class,id));
+        assertThat(event.get("data").get("profileVersion").asLong()).isEqualTo(1);
+        assertThat(event.get("data").get("publicVisible").asBoolean()).isTrue();
+        assertThat(event.get("data").get("profile").size()).isEqualTo(5);
+        assertThat(event.toString()).doesNotContain("email","phone","password","otp","token");
+    }
     private List<Integer> race(Callable<Integer> first,Callable<Integer> second) throws Exception {
         try (var pool=Executors.newFixedThreadPool(2)) {
             var gate=new CountDownLatch(1);

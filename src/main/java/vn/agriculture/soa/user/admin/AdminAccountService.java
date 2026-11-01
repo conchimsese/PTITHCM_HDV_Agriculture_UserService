@@ -162,7 +162,7 @@ public class AdminAccountService {
                 if (newStatus == AccountStatus.LOCKED) {
                     repository.revokeAllRefreshTokens(targetId, now);
                     repository.updateStatus(targetId, AccountStatus.LOCKED, true, now);
-                    accountOutbox.appendStatusChange(targetId, target.email(), AccountStatus.LOCKED, reason, target.accountVersion() + 1, now, adminId);
+                    accountOutbox.appendStatusChange(targetId, target.email(), target.emailVerifiedAt() != null, AccountStatus.LOCKED, reason, target.accountVersion() + 1, now, adminId);
                     if (target.role() != AccountRole.ADMIN && target.status() == AccountStatus.ACTIVE) {
                         long newProfileVersion = repository.touchAccount(targetId, true, now);
                         profileOutbox.append(targetId, target.role(), newProfileVersion, null, now, adminId);
@@ -189,7 +189,7 @@ public class AdminAccountService {
                         }
                     }
                     repository.updateStatus(targetId, AccountStatus.ACTIVE, false, now);
-                    accountOutbox.appendStatusChange(targetId, target.email(), AccountStatus.ACTIVE, reason, target.accountVersion() + 1, now, adminId);
+                    accountOutbox.appendStatusChange(targetId, target.email(), target.emailVerifiedAt() != null, AccountStatus.ACTIVE, reason, target.accountVersion() + 1, now, adminId);
                     if (target.role() != AccountRole.ADMIN && target.status() != AccountStatus.ACTIVE) {
                         Details profile = repository.findProfileDetails(target).orElseThrow(AdminAccountService::unavailable);
                         Snapshot snapshot = ProfileDtos.snapshot(profile, target.createdAt());
