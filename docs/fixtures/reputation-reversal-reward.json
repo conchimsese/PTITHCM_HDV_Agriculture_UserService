@@ -1,0 +1,26 @@
+{
+    "eventId":  "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "eventType":  "CONTRACT_REPUTATION_DECIDED",
+    "eventVersion":  1,
+    "sourceService":  "payment-service",
+    "occurredAt":  "2026-11-02T00:01:00Z",
+    "actorId":  null,
+    "recipientIds":  [
+
+                     ],
+    "referenceType":  "CONTRACT",
+    "referenceId":  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "data":  {
+                 "decisionId":  "44444444-4444-4444-8444-444444444444",
+                 "decisionVersion":  2,
+                 "originalDecisionId":  "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                 "contractId":  "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                 "accountId":  "22222222-2222-4222-8222-222222222222",
+                 "counterpartyId":  "33333333-3333-4333-8333-333333333333",
+                 "action":  "REVERSAL",
+                 "violationCode":  null,
+                 "requestedDelta":  -0.5,
+                 "reasonCode":  "ORIGINAL_DECISION_CANCELLED",
+                 "effectiveAt":  "2026-11-02T00:01:00Z"
+             }
+}

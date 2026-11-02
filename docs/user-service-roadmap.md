@@ -6,7 +6,7 @@ Cập nhật: 02/11/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Servi
 
 - Giữ Java 21/Spring Boot 3.5.x/Maven, PostgreSQL/Flyway và port 8081. Chỉ sửa repo User; không đọc DB hoặc tự sửa code service khác.
 - Ưu tiên chỉ đạo mới nhất → Conflict đã chốt → Contract v2.1 → rule → service spec. Không tự thêm API/role/nghiệp vụ ngoài BA.
-- Schema đã có không đồng nghĩa nghiệp vụ đã được triển khai. Đã có media storage/API, transactional outbox, Kafka relay, email worker và profile bootstrap; reputation consumer chưa triển khai. Delivery cần bật bằng cấu hình môi trường.
+- Schema đã có không đồng nghĩa nghiệp vụ đã được triển khai. Đã có media storage/API, transactional outbox, Kafka relay, email worker, profile bootstrap và reputation consumer cho penalty/reward/reversal. Listener reputation mặc định tắt đến khi Payment bàn giao fixture/producer mới với reversal thưởng version2; delivery cần cấu hình môi trường.
 - Các phase dưới tách nhỏ nhóm công việc trong prompt gốc để dễ nghiệm thu: Phase 0 tương ứng nền; Phase 1 tương ứng auth; Phase 2–4 tương ứng profile/Admin/media; Phase 5 tương ứng outbox; Phase 6 tương ứng reputation; Phase 7 kiểm chứng tích hợp và bàn giao.
 - Mỗi phase có code, migration nếu cần, test phù hợp, fixtures và cập nhật README/implementation-decisions. Không sửa migration đã áp dụng; dùng migration mới. Không commit/push hoặc thay đổi repo khác nếu lượt thực hiện chưa được yêu cầu.
 
@@ -14,14 +14,14 @@ Cập nhật: 02/11/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Servi
 | --- | --- | --- |
 | 0 | Nền project, schema, lỗi API, access-state | Đã có code và kiểm chứng local |
 | 1 | Authentication, OTP, JWT, refresh/logout, rate limit, seed | Đã có code và kiểm chứng; cấu hình Admin/SMTP thật còn tùy môi trường |
-| 2 | Private/public profile | Đã triển khai, kiểm chứng và ghi outbox; chưa relay |
+| 2 | Private/public profile | Đã triển khai, kiểm chứng và ghi outbox; relay đã có ởPhase5 |
 | 3 | Admin quản lý account và khóa/mở | Đã hoàn thành và kiểm chứng API/policy/outbox; delivery Kafka/email thuộc Phase 5 |
 | 4 | Upload/read avatar | Đã hoàn thành và kiểm chứng; quyết định ADMIN đã được người dùng chấp thuận |
 | 5 | Outbox relay, profile event, email khóa/mở | Đã triển khai và kiểm chứng local với Kafka/PostgreSQL/Mailpit; tích hợp owner thật thuộc Phase7 |
-| 6 | Reputation consumer và event kết quả | Chưa triển khai |
+| 6 | Reputation consumer và event kết quả | Đã hoàn thành phía User/local, kiểm chứng reversal/cap/dedup/lock/rollback/retry/DLT; tích hợp Payment thật thuộc Phase7 |
 | 7 | Kiểm thử tích hợp, Docker và bàn giao | Có kiểm chứng User local; chưa nghiệm thu tích hợp/liên service và môi trường bàn giao |
 
-Kết quả kiểm chứng mới nhất: `clean verify` ngày02/11/2026 đạt **133 test**, gồm36 unit/Web/security và97 integration; không failure/error/skipped. Kafka/PostgreSQL/Mailpit thật chạy biệt lập; đã kiểm broker down/recovery, post-ACK/SMTP crash, retry/duplicate/version/visibility, verify rollback và migration backlog V2→V3. Log local `.tools/phase5-verify.log`, report target/surefire-reports và target/failsafe-reports. Compose Kafka external listener đã smoke trên project test rồi dọn. JAR upload/restart vẫn đạt; chưa nghiệm thu image ứng dụng, SMTP production và tích hợp owner thật (Phase7).
+Kiểm chứng ngày02/11/2026: `clean verify` **BUILD SUCCESS, 168 test** (43 unit/Web/security +125 integration), 0 failure/error/skipped. Phase6 có35 test trực tiếp: 7 validator/policy/fixtures, 23 PostgreSQL domain và 5 Kafka reliability. Bao gồm reversal actualDelta/clamp0–10, double reversal, thiếu gốc/replay, scope/version, giữ flag/status, Admin mở thủ công, concurrent/rollback và crash sau commit trước ACK. Các regression Auth/Admin/profile/media/JAR restart/outbox/SMTP tiếp tục đạt. Log local `.tools/phase6-complete-verify.log`; XML reports tại target/surefire-reports và target/failsafe-reports. **Phase6 hoàn thành trong phạm vi User/local**; Payment bàn giao producer/fixture mới cho reversal thưởng version2 và tích hợp owner thực tế, Docker/deployment/backup/SMTP production thuộc Phase7.
 
 ## Phase 0 — Nền project và persistence
 
@@ -120,6 +120,7 @@ Kết quả kiểm chứng mới nhất: `clean verify` ngày02/11/2026 đạt *
 
 ## Phase 6 — Reputation consumer và kết quả xử lý
 
+**Đã hoàn thành và kiểm chứng phía User ngày02/11/2026:** PENALTY/COMPLETION_REWARD/REVERSAL, cap/history/dedup/lock/outbox, commit-before-ACK, retry/DLT và replay. Payment xác nhận reversal trỏ trực tiếp gốc phạt/thưởng; User đảo actualDelta đã lưu rồi clamp, mỗi gốc một lần, không đảo reversal/tự phục hồi thưởng/đổi tiền cọc. Reversal score>0 bỏ reputation_lock nhưng giữ status/admin_lock/INACTIVE/verified, chờ Admin mở ACTIVE. User chấp thuận chuẩn hóa base version1/mọi reversal version2; **Payment phải sửa producer reversal thưởng version1 và bàn giao fixture mới trước khi bật listener**. Listener mặc định tắt; kiểm chứng Payment thực tế thuộc Phase7. Xem reputation-contract-and-recovery.md.
 **Phụ thuộc:** Phase 3 và Phase 5; thống nhất các invariant decision với owner Payment trước tích hợp.
 
 **Công việc:**
@@ -129,7 +130,7 @@ Kết quả kiểm chứng mới nhất: `clean verify` ngày02/11/2026 đạt *
 - PENALTY, COMPLETION_REWARD, REVERSAL: clamp0..10/bước0,5, history requestedDelta/actualDelta/before/after, thưởng+0,5 và cap1 điểm/cặp/30 ngày, unique business keys; cap hit ghi actualDelta0, không cộng lại sau.
 - Dedup cả khi eventId mới nhưng decision business key cũ; cùng key khác dữ liệu phải phát hiện và xử lý, không silently accept.
 - Reversal đảo actualDelta gốc một lần; thiếu gốc retry/DLT, không ACK bỏ qua. Kiểm tra thứ tự reward/reversal/penalty và liên kết version/gốc.
-- Khóa account khi score0, revoke refresh, phân biệt admin_lock/reputation_lock/INACTIVE/verified; không tự reset điểm. Cách mở sau reversal phải được chốt rõ.
+- Khóa account khi score0, revoke refresh, phân biệt admin_lock/reputation_lock/INACTIVE/verified; không tự reset điểm. Cách mở đã chốt: reversal hợp lệ đưa score>0 chỉ bỏ reputation_lock, chờ Admin mở ACTIVE; đã có kiểm thử cả Admin mở thủ công và JWT trong thời gian chờ.
 - Ghi score/history/flags/revoke/outbox cùng transaction, commit trước offset; phát REPUTATION_CHANGED và account events đúng payload. Mail dùng worker của Phase 5.
 - Xác định retry/DLT riêng User trong ADR; không tự nhận lịch Notification làm policy User. Forward thành công trước khi commit offset; replay có kiểm soát.
 
@@ -156,9 +157,8 @@ Kết quả kiểm chứng mới nhất: `clean verify` ngày02/11/2026 đạt *
 
 | Điểm còn thiếu/mâu thuẫn | Cần chốt trước | Có thể tiếp tục độc lập |
 | --- | --- | --- |
-| Tự mở hay Admin mở sau reversal, trong điều kiện các lock khác | Nhánh unlock của Phase 6 | Phase 2–5 và penalty/history |
-| decisionId/version/originalDecisionId và thứ tự sửa/hủy quyết định | Tích hợp consumer Phase 6 với Payment | Profile/Admin/media/outbox |
-| Retry/DLT và quy trình replay riêng User | Nghiệm thu reliability Phase 6 | Các phase nghiệp vụ trước đó |
+| Payment sửa reversal thưởng thành version2 và bàn giao fixture producer mới | Bật listener và tích hợp Payment ở Phase7 | Code/test Phase6 phía User |
+| Đối chiếu binding envelope/key/order, ACL/retention và recovery với owner thật | Bật consumer production ở Phase7 | Kiểm thử User bằng fixtures/Testcontainers |
 
 Không mở lại D01–D07 đã chốt; chỉ làm rõ các invariant triển khai còn thiếu, ghi quyết định trong implementation-decisions/ADR và đồng bộ với owner khi liên quan giao tiếp.
 
@@ -169,4 +169,4 @@ Không mở lại D01–D07 đã chốt; chỉ làm rõ các invariant triển k
 - Phase 5–6: Kafka bootstrap/security/topic configuration, service keys, fixtures và invariant của các owner.
 - Phase 7: origin/domain thật, deployment secrets, public key set/rotation và xác nhận tích hợp từ các owner.
 
-**Bước triển khai tiếp theo: Phase 6 — Reputation consumer và kết quả xử lý**. Cần chốt invariant decision/reversal/unlock và retry/DLT riêng User theo các điểm còn lại trước khi nghiệm thu tích hợp Payment.
+**Bước triển khai tiếp theo:** Phase7: nhận fixture/producer Payment mới cho reversal thưởng version2, đối chiếu Payment→User→Notification cùng thứ tự/recovery, rồi mới bật listener theo môi trường. Tiếp tục nghiệm thu Docker/deployment/backup/SMTP và liên service theo checklist Phase7.

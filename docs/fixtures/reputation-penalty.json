@@ -1,0 +1,24 @@
+{
+  "eventId": "77777777-7777-4777-8777-777777777777",
+  "eventType": "CONTRACT_REPUTATION_DECIDED",
+  "eventVersion": 1,
+  "sourceService": "payment-service",
+  "occurredAt": "2026-11-02T00:00:00Z",
+  "actorId": null,
+  "recipientIds": [],
+  "referenceType": "CONTRACT",
+  "referenceId": "88888888-8888-4888-8888-888888888888",
+  "data": {
+    "decisionId": "99999999-9999-4999-8999-999999999999",
+    "decisionVersion": 1,
+    "originalDecisionId": null,
+    "contractId": "88888888-8888-4888-8888-888888888888",
+    "accountId": "22222222-2222-4222-8222-222222222222",
+    "counterpartyId": "33333333-3333-4333-8333-333333333333",
+    "action": "PENALTY",
+    "violationCode": "F04",
+    "requestedDelta": -2,
+    "reasonCode": "CONFIRMED_F04_REMEDIED",
+    "effectiveAt": "2026-11-02T00:00:00Z"
+  }
+}

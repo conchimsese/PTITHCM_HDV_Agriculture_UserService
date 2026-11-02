@@ -29,6 +29,11 @@ public class AccountOutboxWriter {
 
     public void appendStatusChange(UUID accountId, String email, boolean emailVerified, AccountStatus status, String reason,
                                    long accountVersion, Instant now, UUID actorId) {
+        appendStatusChange(accountId,email,emailVerified,status,reason,
+                status==AccountStatus.LOCKED?"ADMIN_LOCK":"ADMIN_UNLOCK",accountVersion,now,actorId);
+    }
+    public void appendStatusChange(UUID accountId, String email, boolean emailVerified, AccountStatus status, String reason,
+                                   String reasonCode,long accountVersion,Instant now,UUID actorId) {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("Account outbox requires the business transaction");
         }
@@ -36,7 +41,7 @@ public class AccountOutboxWriter {
         UUID eventId = UUID.randomUUID();
         var envelope = new Envelope(eventId, eventType, 1, "user-service", now, actorId,
                 List.of(accountId), "ACCOUNT", accountId,
-                new Data(accountId, status == AccountStatus.LOCKED ? "ADMIN_LOCK" : "ADMIN_UNLOCK", accountVersion));
+                new Data(accountId, reasonCode, accountVersion));
         var emailPayload = new EmailPayload(accountId, email, eventType, reason, now);
         try {
             String kafkaPayload = json.writeValueAsString(envelope);

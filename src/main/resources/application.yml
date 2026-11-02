@@ -94,6 +94,10 @@ management:
     readinessstate:
       enabled: true
 user:
+  reputation:
+    enabled: ${REPUTATION_CONSUMER_ENABLED:false}
+    replay-enabled: ${REPUTATION_REPLAY_ENABLED:false}
+    replay-file: ${REPUTATION_REPLAY_FILE:}
   outbox:
     kafka-enabled: ${OUTBOX_KAFKA_ENABLED:false}
     email-enabled: ${OUTBOX_EMAIL_ENABLED:false}

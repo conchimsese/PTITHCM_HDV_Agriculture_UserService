@@ -20,7 +20,7 @@ Java 21, Spring Boot 3.5.16, Maven Wrapper 3.9.11, PostgreSQL 17, Flyway; port m
 
 - Phase5: Kafka relay và email worker độc lập; verify phát public snapshot atomic, bootstrap profile qua job opt-in. Migration V3 thêm delivery_sequence/index để giữ thứ tự cùng account/channel. Delivery được bật bằng cấu hình bên dưới.
 
-Chưa triển khai reputation consumer và các event kết quả xử lý reputation (Phase6). Tích hợp Trading/Payment/Notification thật và SMTP production thuộc Phase7.
+- Phase6 đã có consumer opt-in, PENALTY/COMPLETION_REWARD/REVERSAL, history/dedup/score0 lock/revoke/outbox và retry/DLT. Listener mặc định tắt đến khi Payment bàn giao producer/fixture mới với mọi reversal version2. Tích hợp Trading/Payment/Notification thật và SMTP production thuộc Phase7.
 
 ## API Admin — Phase 3
 
@@ -104,6 +104,20 @@ Quan sát pending/retry bằng `scripts/Outbox-Status.sql`; query không in payl
 Fixtures giao cho owner: `docs/fixtures/user-profile-updated.json`, `account-locked.json`, `account-unlocked.json`; consumer profile fixture tại `src/test/java/vn/agriculture/soa/user/fixtures/ProfileReplica.java`. Đây là fixture hợp đồng, chưa chứng minh repo Trading/Notification thật đã tích hợp.
 
 `clean verify` ngày02/11/2026 đạt **133 test** (36 unit/Web/security +97 integration), 0 failure/error/skipped. Phase5 thêm16 test, gồm13 Kafka/PostgreSQL/Mailpit integration và các test verify rollback, Admin email verified, mail config. Log local `.tools/phase5-verify.log`.
+
+## Reputation — Phase 6
+
+Xem `docs/reputation-contract-and-recovery.md` cho contract và recovery. User chỉ xử lý quyết định đã xác nhận từ Payment; không tự phán vi phạm hoặc chạy job thưởng72h. Fixtures penalty/reward/reversal trong docs/fixtures là mẫu phía User, không phải bằng chứng producer Payment đã tích hợp.
+
+Consumer `soa.payment.reputation-decision.v1`, key accountId, group `user-reputation-decision-v1`; JSON source payment-service và eventVersion1. Validate role/mã/mức điểm, clamp0..10/bước0,5; reward+0,5 và cap1 điểm/account/counterparty/30ngày. Record cap hit/ceiling vẫn ghi actualDelta0 và không cộng lại sau. Duplicate event/business key không áp hai lần; payload khác dưới key cũ là conflict. V4 bổ sung fingerprint/history metadata và event receipts, không sửa migration cũ.
+
+Score0 đặt reputation_lock, revoke refresh, giữ nguyên INACTIVE/admin_lock, chặn JWT cũ trên request mới và ghi REPUTATION_CHANGED/account/profile visibility outbox cùng transaction. ACK sau DB commit; crash trước ACK nhận lại nhưng không đổi điểm lần hai. REVERSAL trỏ trực tiếp gốc phạt/thưởng, đảo actualDelta đã lưu rồi clamp; requestedDelta chỉ lưu đối chiếu. Một gốc chỉ đảo một lần, không đảo reversal hoặc tự phục hồi thưởng đã thu hồi. Score>0 sau reversal bỏ reputation_lock nhưng giữ status và chờ Admin mở ACTIVE; không tác động tiền/cọc.
+
+Base decisionVersion=1, mọi REVERSAL=2; không phải version chung account/Contract. User chấp thuận chuẩn hóa reversal thưởng từ1 thành2: **Payment cần sửa producer và bàn giao fixture mới trước khi bật `REPUTATION_CONSUMER_ENABLED=true`**. Lỗi DB/ordering/thiếu gốc được giữ retry, không ACK bỏ qua. Envelope/policy/version conflict không retryable thử3 lần rồi forward `soa.user.reputation-decision.dlt.v1`, chỉ commit nguồn khi broker ACK DLT. DLT private giữ input gốc và metadata nguồn tối thiểu; không copy headers/stack trace hoặc log raw payload. Không dùng lịch/topic retry Notification.
+
+Replay opt-in qua `REPUTATION_REPLAY_ENABLED`/`REPUTATION_REPLAY_FILE` với JSONL được Payment phê chuẩn; không có HTTP API đổi điểm. Dừng listener, đối soát thứ tự trước replay, không rewrite history/score hoặc tự nâng offset. Thiếu gốc thì replay gốc hợp lệ trước rồi retry reversal. Xem `scripts/Reputation-Status.sql` và tài liệu recovery.
+
+Kết quả kiểm thử Phase 6 được ghi trong `docs/implementation-decisions.md` và `docs/user-service-roadmap.md`; nghiệm thu producer Payment và Notification thực tế thuộc Phase 7.
 
 ## Chạy local trên máy
 
