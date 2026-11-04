@@ -19,7 +19,7 @@ Cập nhật: 02/11/2026. Nguồn yêu cầu: `BA - SOA.docx`, phần User Servi
 | 4 | Upload/read avatar | Đã hoàn thành và kiểm chứng; quyết định ADMIN đã được người dùng chấp thuận |
 | 5 | Outbox relay, profile event, email khóa/mở | Đã triển khai và kiểm chứng local với Kafka/PostgreSQL/Mailpit; tích hợp owner thật thuộc Phase7 |
 | 6 | Reputation consumer và event kết quả | Đã hoàn thành phía User/local, kiểm chứng reversal/cap/dedup/lock/rollback/retry/DLT; tích hợp Payment thật thuộc Phase7 |
-| 7 | Kiểm thử tích hợp, Docker và bàn giao | Có kiểm chứng User local; chưa nghiệm thu tích hợp/liên service và môi trường bàn giao |
+| 7 | Kiểm thử tích hợp, Docker và bàn giao | Đã nghiệm thu image/restart/backup restore local (30/30 check) và tài liệu; liên service/môi trường đích chờ owner |
 
 Kiểm chứng ngày02/11/2026: `clean verify` **BUILD SUCCESS, 168 test** (43 unit/Web/security +125 integration), 0 failure/error/skipped. Phase6 có35 test trực tiếp: 7 validator/policy/fixtures, 23 PostgreSQL domain và 5 Kafka reliability. Bao gồm reversal actualDelta/clamp0–10, double reversal, thiếu gốc/replay, scope/version, giữ flag/status, Admin mở thủ công, concurrent/rollback và crash sau commit trước ACK. Các regression Auth/Admin/profile/media/JAR restart/outbox/SMTP tiếp tục đạt. Log local `.tools/phase6-complete-verify.log`; XML reports tại target/surefire-reports và target/failsafe-reports. **Phase6 hoàn thành trong phạm vi User/local**; Payment bàn giao producer/fixture mới cho reversal thưởng version2 và tích hợp owner thực tế, Docker/deployment/backup/SMTP production thuộc Phase7.
 
@@ -139,6 +139,8 @@ Kiểm chứng ngày02/11/2026: `clean verify` **BUILD SUCCESS, 168 test** (43 u
 **Điều kiện nghiệm thu:** một quyết định chỉ tác động một lần; reversal không đảo hai lần; lỗi giữa transaction không để lại score/history/lock lệch nhau; không mất record khi retry/forward lỗi.
 
 ## Phase 7 — Tích hợp, Docker và bàn giao
+
+**Đã nghiệm thu phần User/local ngày02/11/2026:** build image từ source thành công, Compose config hợp lệ, Smoke-Deployment.ps1 đạt **30/30 check**, gồm non-root/probes/Flyway, hai Admin verified qua Mailpit, auth/service-key/lock/JWT/refresh, avatar qua image restart, DB outage, paired DB/media backup và restore vào volume mới giữ exact bytes/metadata/Admin/revoked refresh. Docker fixture đã cleanup. Có runbook cấu hình/backup/restore/recovery, ma trận requirement→code→test và ví dụ20 endpoint. Baseline168 test Phase6 vẫn áp dụng vì không đổi Java business code. Xem `phase7-local-verification.md`, `deployment-and-handover.md`, `verification-matrix.md`, `api-examples.http` và `scripts/Smoke-Deployment.ps1`. **Toàn Phase7 chưa hoàn thành:** còn fixture/producer Payment mới và nghiệm thu Gateway/Trading/Notification/backend/WS/SMTP thật, hai Admin thật cùng môi trường bàn giao.
 
 **Phụ thuộc:** Phase 2–6 đạt nghiệm thu; các nhánh mâu thuẫn BA đã có quyết định được ghi lại.
 

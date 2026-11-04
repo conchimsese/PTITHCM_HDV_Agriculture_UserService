@@ -1,9 +1,10 @@
 FROM maven:3.9.11-eclipse-temurin-21 AS build
 WORKDIR /app
 COPY pom.xml .
-RUN mvn -B dependency:go-offline
 COPY src src
-RUN mvn -B -DskipTests package
+# Full verify runs separately with Docker/Testcontainers. Cache actual build dependencies;
+# go-offline also resolves unused plugin transitives and can fail on unrelated artifacts.
+RUN --mount=type=cache,target=/root/.m2 mvn -B -Dmaven.test.skip=true package
 
 FROM eclipse-temurin:21-jre-alpine
 RUN addgroup -S app && adduser -S app -G app

@@ -1,0 +1,124 @@
+# Synthetic examples only. Use a private HTTP client environment for credentials/tokens.
+# Requests mutate the selected environment. Run individually; replace IDs and OTP deliberately.
+@baseUrl = http://localhost:8081
+@accountId = 22222222-2222-4222-8222-222222222222
+@mediaId = 66666666-6666-4666-8666-666666666666
+
+### 1. Register Farmer (profile.fullName); Trader uses profile.businessName
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{"username":"example_farmer","email":"farmer@example.test","password":"{{password}}","role":"FARMER","profile":{"fullName":"Example Farmer"}}
+
+### 2. Verify email using the code received by this identity
+POST {{baseUrl}}/api/v1/auth/verify-email
+Content-Type: application/json
+
+{"email":"farmer@example.test","otp":"{{otp}}"}
+
+### 3. Resend OTP (quota/cooldown apply)
+POST {{baseUrl}}/api/v1/auth/resend-verification
+Content-Type: application/json
+
+{"email":"farmer@example.test"}
+
+### 4. Login; store returned tokens privately, never in this file
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username":"example_farmer","password":"{{password}}"}
+
+### 5. Refresh rotates the token; previous refresh becomes invalid
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{"refreshToken":"{{refreshToken}}"}
+
+### 6. Logout this refresh session (bearer must belong to its owner)
+POST {{baseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{"refreshToken":"{{refreshToken}}"}
+
+### 7. Private profile; ADMIN profile=null
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+
+### 8. Full PUT for Farmer; omitted optional fields become null; avatar must be owned
+PUT {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{"fullName":"Example Farmer","province":"Example Province","district":"Example District"}
+
+### 9. Public account profile (six whitelisted fields; target/caller must be ACTIVE)
+GET {{baseUrl}}/api/v1/users/{{accountId}}
+Authorization: Bearer {{accessToken}}
+
+### 10. Public Farmer profile
+GET {{baseUrl}}/api/v1/farmers/{{accountId}}
+Authorization: Bearer {{accessToken}}
+
+### 11. Public Trader profile (use a Trader accountId)
+GET {{baseUrl}}/api/v1/traders/{{accountId}}
+Authorization: Bearer {{accessToken}}
+
+### 12. Admin creates FARMER/TRADER UNVERIFIED; no API creates ADMIN
+POST {{baseUrl}}/api/v1/admin/accounts
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{"username":"example_trader","email":"trader@example.test","password":"{{password}}","role":"TRADER","profile":{"businessName":"Example Trader"}}
+
+### 13. Admin paginated list (page=0, size=20, maximum=100)
+GET {{baseUrl}}/api/v1/admin/accounts?page=0&size=20&role=FARMER&status=ACTIVE
+Authorization: Bearer {{adminAccessToken}}
+
+### 14. Admin account details
+GET {{baseUrl}}/api/v1/admin/accounts/{{accountId}}
+Authorization: Bearer {{adminAccessToken}}
+
+### 15. Admin profile PATCH allowlist; no role/email/password/status/reputation edits
+PATCH {{baseUrl}}/api/v1/admin/accounts/{{accountId}}
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{"fullName":"Updated Farmer"}
+
+### 16. Admin status; ACTIVE restore still requires verified/score/lock guards
+PATCH {{baseUrl}}/api/v1/admin/accounts/{{accountId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{"status":"LOCKED","reason":"MANUAL_REVIEW"}
+
+### 17. Soft-delete -> INACTIVE; refresh revoked
+DELETE {{baseUrl}}/api/v1/admin/accounts/{{accountId}}
+Authorization: Bearer {{adminAccessToken}}
+
+### 18. Avatar upload. Define avatarFile as a private absolute path to JPEG/PNG/WebP <=5MiB
+POST {{baseUrl}}/api/v1/users/me/avatar
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=AvatarExampleBoundary
+
+--AvatarExampleBoundary
+Content-Disposition: form-data; name="file"; filename="avatar.png"
+Content-Type: image/png
+
+< {{avatarFile}}
+--AvatarExampleBoundary--
+
+### 19. Avatar owner/current-public access; ADMIN media is owner-only
+GET {{baseUrl}}/api/v1/users/media/{{mediaId}}
+Authorization: Bearer {{accessToken}}
+
+### 20. Internal caller ONLY; Gateway must never route this path publicly
+GET {{baseUrl}}/internal/v1/accounts/{{accountId}}/access-state
+X-Service-Key: {{gatewayServiceKey}}
+
+### Operational probes (not included in the 20 business/internal endpoints)
+GET {{baseUrl}}/actuator/health/readiness
+
+### Liveness
+GET {{baseUrl}}/actuator/health/liveness

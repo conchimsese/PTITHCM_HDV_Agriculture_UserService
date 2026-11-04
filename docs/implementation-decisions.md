@@ -1,5 +1,15 @@
 # Quyết định triển khai giai đoạn nền
 
+## Phase 7 — Image và vận hành local; bàn giao liên service còn mở — 02/11/2026
+
+- Phase6 được commit riêng ở `eefe7a2`, giữ nguyên baseline168 test. Phase7 không sửa Java business code hoặc migration; bàn giao phần User/local trong commit riêng, còn nghiệm thu liên service/môi trường đích.
+- Docker build từ source dùng cache Maven thực tế và bỏ `dependency:go-offline`: lệnh cũ kéo transitive plugin không cần thiết (rocksdbjni7.9.2) rồi lỗi download, dù ứng dụng không dùng RocksDB. Test gate vẫn là `verify` độc lập; image chỉ package JAR với `maven.test.skip=true`, runtime JRE21 Alpine và user không root. `.dockerignore` giữ allowlist không đưa .env/key/backup vào build context.
+- Smoke-Deployment.ps1 chạy Windows, tạo private RSA/OTP/DB/caller credentials, hai Admin **khác password**, PostgreSQL17/Mailpit và volume/network/port loopback riêng. Không đọc workspace .env hoặc dữ liệu vận hành. Readiness chờ có deadline và fail sớm khi app exit. Cleanup chỉ resources tên ngẫu nhiên của lần chạy; private backup/keys/env/log không upload công khai.
+- Runbook ghi cold backup paired DB/media sau khi dừng mọi writer; restore vào DB/media mới, giữ owner/secret/key semantics, đối soát source offsets/outbox trước bật workers. Không chạy destructive restore trên DB hiện tại, không tự reset offset hoặc rewrite history. Restore local không chứng minh RPO/RTO/PITR production.
+- Bổ sung deployment-and-handover.md, verification-matrix.md và api-examples.http đủ20 endpoint. Tích hợp Payment→User→Notification, Trading replica, Gateway/backend/WS lock, SMTP thật/hai Admin thật, domain/origin/TLS/rotation/retention và backup rehearsal môi trường đích vẫn cần owner. Payment phải sửa reversal thưởng version2 và bàn giao fixture mới, listener vẫn tắt.
+
+Verification ngày02/11/2026: docker build từ source thành công, Compose app/messaging config --quiet đạt, Smoke-Deployment.ps1 **30/30 check PASS (exit0)**. Gồm non-root/probes/Flyway V1–V4, hai Admin khác password đã verify qua SMTP cô lập, Farmer register/OTP/login, upload201, service-key scope, Admin lock/oldJWT403/refresh403 khi LOCKED, refresh401 sau unlock, image restart giữ avatar bytes/profile, DB outage503 và readiness DOWN, paired backup/restore volume mới giữ exact bytes/metadata/Admin/revoked refresh/service key. Tất cả Docker fixture đã cleanup. Không đổi Java sau baseline168 test; không chạy lại full verify chỉ cho thay đổi Docker/docs/script. Report đã lọc secret tại phase7-local-verification.md; log local .tools/phase7-docker-build.log và .tools/phase7-deployment-smoke.log. **Phase7 hoàn thành phần User/local; chưa nghiệm thu owner/môi trường đích.**
+
 ## Phase 6 — Reputation đầy đủ phía User — 02/11/2026
 
 - **Xác nhận Payment mới thay thế quyết định chờ trước đó:** REVERSAL trỏ trực tiếp phạt/thưởng gốc. User đảo actualDelta trong history rồi clamp 0–10; requestedDelta chỉ lưu đối chiếu. Không đảo một reversal, tự phục hồi reward đã thu hồi hoặc thay đổi tiền/cọc.

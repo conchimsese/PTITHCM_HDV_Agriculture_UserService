@@ -119,6 +119,14 @@ Replay opt-in qua `REPUTATION_REPLAY_ENABLED`/`REPUTATION_REPLAY_FILE` với JSO
 
 Kết quả kiểm thử Phase 6 được ghi trong `docs/implementation-decisions.md` và `docs/user-service-roadmap.md`; nghiệm thu producer Payment và Notification thực tế thuộc Phase 7.
 
+## Deployment và bàn giao — Phase 7
+
+Build image bằng `docker build -t user-service:phase7-local .`, sau đó chạy `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Smoke-Deployment.ps1` trên Windows có JDK21/Docker. Smoke tạo riêng DB/media/network/Mailpit, kiểm hai Admin fixture đã verify, JWT/refresh sau lock, upload/restart và backup/restore vào volume mới; không đọc `.env` hiện tại hoặc dùng DB vận hành. Env/key/dump/archive/log chỉ nằm trong ignored `.tools/deployment-<uuid>`.
+
+Xem [runbook deployment/backup/restore](docs/deployment-and-handover.md), [ma trận requirement → test](docs/verification-matrix.md) và [ví dụ đủ20 endpoint](docs/api-examples.http). `compose.yml` là local với Mailpit/Kafka PLAINTEXT; cấu hình môi trường đích cần SMTP/TLS/secrets/routing riêng. Phase7 chỉ hoàn tất toàn bộ khi có bằng chứng owner thật, producer Payment reversal thưởng version2 và rehearsal trên môi trường bàn giao; không coi smoke User là tích hợp toàn hệ thống.
+
+Kiểm chứng local ngày02/11/2026: image build thành công, Compose config hợp lệ, **30/30 deployment smoke check đạt**; [bằng chứng đã lọc secret](docs/phase7-local-verification.md). Baseline `verify` vẫn là168 test đạt, không đổi Java business code ở Phase7.
+
 ## Chạy local trên máy
 
 Yêu cầu JDK 21 (`java -version`, `javac -version`), Docker Desktop đang chạy và Internet cho lần tải Maven/dependency/image đầu tiên. Wrapper giúp không cần cài Maven riêng.
